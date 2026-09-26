@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stylised bonsai in a pot, drawn inside the 72dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- canopy -->
+    <path android:fillColor="#3E5A36"
+        android:pathData="M30,50 C24,50 22,42 28,39 C28,32 36,29 41,33 C44,26 55,25 59,31 C64,27 73,29 74,36 C81,37 83,46 77,49 C77,54 70,56 66,53 C62,57 54,56 52,52 C47,56 39,55 37,51 C35,53 32,53 30,50 Z" />
+    <!-- trunk -->
+    <path android:fillColor="#6B4A2E"
+        android:pathData="M51,52 C50,58 45,61 46,68 L58,68 C57,63 55,60 57,55 C60,57 63,56 64,53 C60,54 58,52 57,50 Z" />
+    <!-- pot -->
+    <path android:fillColor="#9C4F2C"
+        android:pathData="M30,68 L78,68 L76,74 L32,74 Z M34,74 L74,74 L71,82 L37,82 Z" />
+</vector>
