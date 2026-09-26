@@ -1,0 +1,4 @@
+BOOTSTRAP_SECRET=change-me-long-random
+WOO_CONSUMER_KEY=ck_xxx
+WOO_CONSUMER_SECRET=cs_xxx
+WOO_WEBHOOK_SECRET=change-me

@@ -1,0 +1,40 @@
+name = "potr-bonsai"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Retry WooCommerce syncs that failed (e.g. shop briefly down) every 30 min.
+[triggers]
+crons = ["*/30 * * * *"]
+
+[vars]
+# Public base URL of this worker. QR codes point at {PUBLIC_BASE_URL}/c/{code}.
+# Recommended: a custom domain such as https://bonsai.potr.in
+PUBLIC_BASE_URL = "https://potr-bonsai.example.workers.dev"
+CODE_PREFIX = "POTR"
+BRAND_NAME = "Potr · Pots on the Rocks"
+SHOP_URL = "https://potr.in"
+# WooCommerce (leave WOO_URL empty to disable syncing)
+WOO_URL = ""
+WOO_CATEGORY_BONSAI_ID = ""
+WOO_CATEGORY_POTS_ID = ""
+# SHA-256 fingerprint(s) of the Android signing cert, comma separated, for
+# https://.../.well-known/assetlinks.json (lets the app open certificate links).
+ANDROID_CERT_SHA256 = ""
+ANDROID_PACKAGE = "in.potr.bonsai"
+
+# Secrets (set with `wrangler secret put NAME`):
+#   BOOTSTRAP_SECRET     one-time secret used to create the first admin
+#   WOO_CONSUMER_KEY     WooCommerce REST API key (Read/Write)
+#   WOO_CONSUMER_SECRET  WooCommerce REST API secret
+#   WOO_WEBHOOK_SECRET   secret configured on the WooCommerce order webhook
+
+[[d1_databases]]
+binding = "DB"
+database_name = "potr-bonsai"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "potr-bonsai-photos"
