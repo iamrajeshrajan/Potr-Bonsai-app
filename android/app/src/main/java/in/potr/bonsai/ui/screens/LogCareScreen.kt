@@ -107,7 +107,7 @@ fun LogCareScreen(nav: NavHostController, bonsaiId: String, taskId: String?) {
             try {
                 val photoIds = photos.map { uri ->
                     val bytes = withContext(Dispatchers.IO) { compressForUpload(context, uri) }
-                    api.uploadPhoto("bonsai", bonsaiId, bytes, setCover = false).id
+                    api.uploadPhoto("bonsai", bonsaiId, bytes).id
                 }
                 val body = buildJsonObject {
                     put("type", type)
@@ -115,7 +115,6 @@ fun LogCareScreen(nav: NavHostController, bonsaiId: String, taskId: String?) {
                     put("performed_by", by)
                     if (notes.isNotBlank()) put("notes", notes.trim())
                     put("is_public", isPublic)
-                    put("set_cover", photoIds.isNotEmpty())
                     put("photo_ids", buildJsonArray { photoIds.forEach { add(JsonPrimitive(it)) } })
                     put("details", buildJsonObject {
                         DETAIL_FIELDS[type].orEmpty().forEach { (key, _) ->

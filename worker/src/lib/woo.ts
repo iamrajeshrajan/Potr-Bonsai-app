@@ -43,14 +43,15 @@ interface WooProduct {
   sku: string;
 }
 
-async function photosFor(env: Env, kind: SyncKind, row: { id: string; cover_photo_id: string | null }) {
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM photos WHERE subject_type = ? AND subject_id = ? ORDER BY created_at DESC LIMIT 6',
-  )
-    .bind(kind, row.id)
-    .all<PhotoRow>();
-  // Cover photo first, then newest.
-  return results.sort((a, b) => Number(b.id === row.cover_photo_id) - Number(a.id === row.cover_photo_id));
+/**
+ * The shop only gets the featured image (the newest photo). The full growth
+ * record stays on the certificate, so the potr.in media library holds one
+ * small image per listed item.
+ */
+async function featuredPhoto(env: Env, row: { cover_photo_id: string | null }): Promise<PhotoRow | null> {
+  return row.cover_photo_id
+    ? env.DB.prepare('SELECT * FROM photos WHERE id = ?').bind(row.cover_photo_id).first<PhotoRow>()
+    : null;
 }
 
 function attr(name: string, value: string | number | null | undefined) {
@@ -173,13 +174,12 @@ export async function syncToWoo(env: Env, kind: SyncKind, id: string): Promise<v
       payload = potProduct(env, row as PotRow);
     }
 
-    // Only (re)send images when the set changed, otherwise WordPress would
-    // import duplicate copies into its media library on every sync.
-    const photos = await photosFor(env, kind, row);
-    const imageIds = JSON.stringify(photos.map((p) => p.id));
-    if (imageIds !== (row.woo_image_ids ?? '[]') || row.woo_product_id == null) {
-      payload.images = photos.map((p) => ({ src: mediaUrl(env, p.r2_key), alt: row.code }));
-    }
+    // Only send the image when the featured photo changed, otherwise
+    // WordPress would import a duplicate copy on every sync.
+    const featured = await featuredPhoto(env, row);
+    const images = featured ? [{ src: mediaUrl(env, featured.r2_key), alt: row.code }] : [];
+    const imageIds = JSON.stringify(featured ? [featured.id] : []);
+    if (imageIds !== (row.woo_image_ids ?? '[]') || row.woo_product_id == null) payload.images = images;
 
     let productId = row.woo_product_id;
     if (productId == null) {
@@ -194,7 +194,7 @@ export async function syncToWoo(env: Env, kind: SyncKind, id: string): Promise<v
       } catch (err) {
         if (!(err instanceof WooError && err.status === 404)) throw err;
         // Deleted in the shop: create it again with images.
-        payload.images = photos.map((p) => ({ src: mediaUrl(env, p.r2_key), alt: row.code }));
+        payload.images = images;
         product = await wooJson<WooProduct>(env, 'POST', '/products', payload);
       }
     } else {

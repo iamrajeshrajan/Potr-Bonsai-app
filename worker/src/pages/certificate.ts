@@ -112,8 +112,8 @@ export async function renderCertificate(env: Env, code: string): Promise<string 
 ${
   photos.results.length > 1
     ? `<section class="card"><h2>Growth record</h2>
+  <p class="muted" style="margin:4px 0 0;font-size:14px">${photos.results.length} photos, newest first.</p>
   <div class="gallery">${photos.results
-    .slice(0, 24)
     .map(
       (p) =>
         `<figure><a href="${escapeHtml(mediaUrl(env, p.r2_key))}"><img loading="lazy" src="${escapeHtml(mediaUrl(env, p.r2_key))}" alt=""></a><figcaption>${fmtDate(p.taken_on ?? p.created_at)}</figcaption></figure>`,

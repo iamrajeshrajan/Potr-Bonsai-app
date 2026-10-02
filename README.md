@@ -39,6 +39,17 @@ Everything runs on free tiers: **GitHub** (code, Actions CI, APK builds) and **C
 - Scheduled care: set due dates and repeat intervals (for example, check wiring every 30 days).
   Marking a task done writes the matching history entry and schedules the next one.
 
+**Photos**
+- The app compresses every photo on the phone to a **WebP under 100 KB** before upload: the long side is
+  at most 1200 px and the best quality that fits is chosen. Re-encoding also strips location data. The
+  server refuses anything larger.
+- Photos are stored in Cloudflare R2. **Every photo is kept** as the bonsai's growth record and shown on
+  its certificate. The **newest photo becomes the featured image** in the app, on the certificate and
+  in the potr.in shop listing. Only that one image is sent to WooCommerce, so the potr.in media library
+  holds one small image per listed item.
+- At 100 KB per photo, R2's free 10 GB holds about 100,000 photos. For example, 500 bonsai with 4 photos
+  a year for 10 years comes to about 2 GB.
+
 **QR cards**
 - Each bonsai or pot links to `https://<your domain>/c/<code>`. A customer who scans it with any phone
   sees the public certificate. On a staff phone the link opens the item directly in the app.
@@ -46,7 +57,7 @@ Everything runs on free tiers: **GitHub** (code, Actions CI, APK builds) and **C
 
 **Catalogue and shop**
 - Switch an item to *for sale* and give it a price. It is created or updated as a WooCommerce product
-  with the item code as its SKU, its photos, details, and the certificate link.
+  with the item code as its SKU, its featured (newest) photo, details, and the certificate link.
 - A WooCommerce order webhook marks the bonsai (and its pot) **sold**, adds it to the history, and sets
   shop stock to 0. If the order is cancelled or refunded, the item goes back into stock.
 - Failed shop syncs are retried every 30 minutes.

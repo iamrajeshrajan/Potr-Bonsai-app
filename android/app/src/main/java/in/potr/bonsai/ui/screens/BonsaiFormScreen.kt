@@ -140,7 +140,7 @@ fun BonsaiFormScreen(nav: NavHostController, bonsaiId: String?) {
                 val saved = if (bonsaiId == null) api.createBonsai(body) else api.updateBonsai(bonsaiId, body)
                 photo?.let { uri ->
                     val bytes = withContext(Dispatchers.IO) { compressForUpload(context, Uri.parse(uri)) }
-                    val p = api.uploadPhoto("bonsai", saved.id, bytes, setCover = true)
+                    val p = api.uploadPhoto("bonsai", saved.id, bytes)
                     api.addEvent(saved.id, buildJsonObject {
                         put("type", "photo")
                         put("performed_on", today())

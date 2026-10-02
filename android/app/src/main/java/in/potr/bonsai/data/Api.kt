@@ -23,7 +23,7 @@ val json = Json {
 }
 
 private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
-private val JPEG_TYPE = "image/jpeg".toMediaType()
+private val WEBP_TYPE = "image/webp".toMediaType()
 
 private val http = OkHttpClient.Builder()
     .connectTimeout(20, TimeUnit.SECONDS)
@@ -90,13 +90,13 @@ class Api(serverUrl: String, private val accessKey: String) {
     suspend fun syncPot(id: String): SyncResult = post("/pots/$id/sync")
 
     // Photos
-    suspend fun uploadPhoto(subjectType: String, subjectId: String, jpeg: ByteArray, setCover: Boolean): Photo =
+    /** Uploads a compressed WebP; the newest photo becomes the featured image. */
+    suspend fun uploadPhoto(subjectType: String, subjectId: String, webp: ByteArray): Photo =
         withContext(Dispatchers.IO) {
             val form = MultipartBody.Builder().setType(MultipartBody.FORM)
                 .addFormDataPart("subject_type", subjectType)
                 .addFormDataPart("subject_id", subjectId)
-                .addFormDataPart("set_cover", setCover.toString())
-                .addFormDataPart("file", "photo.jpg", jpeg.toRequestBody(JPEG_TYPE))
+                .addFormDataPart("file", "photo.webp", webp.toRequestBody(WEBP_TYPE))
                 .build()
             val request = Request.Builder()
                 .url("$base/api/photos")

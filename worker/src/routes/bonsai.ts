@@ -122,7 +122,6 @@ export interface ManualEventInput {
   details: Record<string, unknown>;
   photo_ids: string[];
   is_public: boolean;
-  set_cover: boolean;
 }
 
 export function parseEventInput(body: Record<string, unknown>, user: User): ManualEventInput {
@@ -145,7 +144,6 @@ export function parseEventInput(body: Record<string, unknown>, user: User): Manu
     details: details as Record<string, unknown>,
     photo_ids: photo_ids as string[],
     is_public: body.is_public !== false,
-    set_cover: body.set_cover === undefined ? type === 'photo' : body.set_cover === true,
   };
 }
 
@@ -180,11 +178,6 @@ export async function recordEvent(env: Env, b: BonsaiRow, input: ManualEventInpu
     },
     (ev) => {
       const stmts = photos.map((p) => env.DB.prepare('UPDATE photos SET event_id = ? WHERE id = ?').bind(ev.id, p.id));
-      if (input.set_cover && photos.length) {
-        stmts.push(
-          env.DB.prepare('UPDATE bonsai SET cover_photo_id = ?, updated_at = ? WHERE id = ?').bind(photos[0].id, now, b.id),
-        );
-      }
       if (input.type === 'measurement' && Object.keys(measured).length) {
         const cols = Object.keys(measured);
         stmts.push(
@@ -379,10 +372,6 @@ bonsaiRoutes.post('/:ref/events', async (c) => {
   const b = await findBonsai(c.env, c.req.param('ref'));
   const input = parseEventInput(await readJson(c.req.raw), user);
   const ev = await recordEvent(c.env, b, input, user);
-  // New photos should reach the shop listing too.
-  if (input.photo_ids.length && (await markForSync(c.env, 'bonsai', b.id))) {
-    c.executionCtx.waitUntil(syncToWoo(c.env, 'bonsai', b.id));
-  }
   return c.json(eventView(ev), 201);
 });
 

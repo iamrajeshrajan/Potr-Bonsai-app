@@ -110,7 +110,7 @@ fun BonsaiDetailScreen(nav: NavHostController, ref: String) {
         scope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) { compressForUpload(context, uri) }
-                val photo = api.uploadPhoto("bonsai", b.id, bytes, setCover = true)
+                val photo = api.uploadPhoto("bonsai", b.id, bytes)
                 api.addEvent(b.id, buildJsonObject {
                     put("type", "photo")
                     put("performed_on", today())

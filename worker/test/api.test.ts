@@ -23,9 +23,14 @@ async function json<T = any>(res: Response | Promise<Response>): Promise<T> {
 // A 1×1 JPEG is enough; the server does not decode images.
 const JPEG = Uint8Array.from(atob('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=='), (c) => c.charCodeAt(0));
 
-async function uploadPhoto(subjectType: string, subjectId: string, extra: Record<string, string> = {}) {
+async function uploadPhoto(
+  subjectType: string,
+  subjectId: string,
+  extra: Record<string, string> = {},
+  file = new File([JPEG], 'p.jpg', { type: 'image/jpeg' }),
+) {
   const form = new FormData();
-  form.set('file', new File([JPEG], 'p.jpg', { type: 'image/jpeg' }));
+  form.set('file', file);
   form.set('subject_type', subjectType);
   form.set('subject_id', subjectId);
   for (const [k, v] of Object.entries(extra)) form.set(k, v);
@@ -183,6 +188,11 @@ describe('inventory and history', () => {
     expect((await api('/api/bonsai', { method: 'POST', json: { species_common: 'Ficus', acquired_on: '12/1/2020' } })).status).toBe(400);
     expect((await api('/api/bonsai', { method: 'POST', json: { species_common: 'Ficus', for_sale: true } })).status).toBe(400);
     expect((await api('/api/bonsai/nope')).status).toBe(404);
+    const b = await json(api('/api/bonsai', { method: 'POST', json: { species_common: 'Ficus' } }));
+    const big = new File([new Uint8Array(100 * 1024 + 1)], 'big.jpg', { type: 'image/jpeg' });
+    const tooBig = await uploadPhoto('bonsai', b.id, {}, big);
+    expect(tooBig.status).toBe(400);
+    expect((await tooBig.json<{ error: string }>()).error).toContain('100 KB');
   });
 });
 
@@ -221,7 +231,20 @@ describe('shop', () => {
       stock_quantity: 1,
       categories: [{ id: 11 }],
     });
+    // Only the featured (newest) photo goes to the shop.
+    expect(created.body.images).toHaveLength(1);
     expect(created.body.images[0].src).toContain('/media/bonsai/');
+
+    // A newer photo replaces the featured image; all photos stay in the growth record.
+    const newer = await json(await uploadPhoto('bonsai', b.id, {}, new File([JPEG, new Uint8Array([1])], 'n.webp', { type: 'image/webp' })));
+    // The upload pushes it to the shop straight away; a later sync does not re-send it.
+    await api(`/api/bonsai/${b.id}/sync`, { method: 'POST' });
+    const puts = calls.filter((c) => c.method === 'PUT');
+    expect(puts.filter((c) => c.body.images).at(-1)!.body.images).toEqual([{ src: newer.url, alt: b.code }]);
+    expect(puts.at(-1)!.body.images).toBeUndefined();
+    const withBoth = await json(api(`/api/bonsai/${b.id}`));
+    expect(withBoth.photos).toHaveLength(2);
+    expect(withBoth.bonsai.cover_photo_url).toBe(newer.url);
     expect(created.body.description).toContain(`${BASE}/c/${b.code}`);
 
     // Pots inside a tree cannot be listed on their own.

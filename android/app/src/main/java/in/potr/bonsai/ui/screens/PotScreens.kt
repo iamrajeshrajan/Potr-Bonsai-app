@@ -96,7 +96,7 @@ fun PotDetailScreen(nav: NavHostController, ref: String) {
         scope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) { compressForUpload(context, uri) }
-                api.uploadPhoto("pot", p.id, bytes, setCover = true)
+                api.uploadPhoto("pot", p.id, bytes)
                 loader.reload()
             } catch (e: Exception) {
                 toast(e.message ?: "Upload failed")
@@ -281,7 +281,7 @@ fun PotFormScreen(nav: NavHostController, potId: String?) {
                 val saved = if (potId == null) api.createPot(body) else api.updatePot(potId, body)
                 photo?.let { uri ->
                     val bytes = withContext(Dispatchers.IO) { compressForUpload(context, android.net.Uri.parse(uri)) }
-                    api.uploadPhoto("pot", saved.id, bytes, setCover = true)
+                    api.uploadPhoto("pot", saved.id, bytes)
                 }
                 if (potId == null) {
                     nav.navigate(Routes.pot(saved.id)) { popUpTo(Routes.POT_NEW) { inclusive = true } }

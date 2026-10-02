@@ -7,14 +7,17 @@ import { badRequest, conflict, isIsoDate, notFound, nowIso, uuid } from '../lib/
 import { findBonsai } from './bonsai';
 import { findPot } from './pots';
 
-const MAX_BYTES = 10 * 1024 * 1024;
+/** The app compresses every photo to under 100 KB; anything larger is refused. */
+export const MAX_PHOTO_BYTES = 100 * 1024;
 const TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
 export const photoRoutes = new Hono<AppEnv>();
 
 /**
  * Multipart upload: file, subject_type (bonsai|pot), subject_id (id or code),
- * optional caption, taken_on, set_cover=true.
+ * optional caption, taken_on.
+ * Every photo is kept (the growth record); the newest one becomes the
+ * featured image in the app, on the certificate and in the shop.
  * Bonsai photos are then attached to a care event via photo_ids.
  */
 photoRoutes.post('/', async (c) => {
@@ -24,7 +27,7 @@ photoRoutes.post('/', async (c) => {
   if (!(file instanceof File)) badRequest('file is required');
   const ext = TYPES[file.type];
   if (!ext) badRequest('Only JPEG, PNG or WebP photos are accepted');
-  if (file.size > MAX_BYTES) badRequest('Photo is larger than 10 MB');
+  if (file.size > MAX_PHOTO_BYTES) badRequest('Photo is larger than 100 KB; update the app so it compresses photos');
   const subjectType = form.get('subject_type');
   const subjectRef = String(form.get('subject_id') ?? '');
   if (subjectType !== 'bonsai' && subjectType !== 'pot') badRequest('subject_type must be bonsai or pot');
@@ -42,7 +45,6 @@ photoRoutes.post('/', async (c) => {
     customMetadata: { sha256 },
   });
   const table = subjectType === 'bonsai' ? 'bonsai' : 'pots';
-  const setCover = form.get('set_cover') === 'true' || !subject.cover_photo_id;
   await c.env.DB.batch([
     c.env.DB.prepare(
       `INSERT INTO photos (id, subject_type, subject_id, r2_key, content_type, bytes, sha256, caption, taken_on, uploaded_by)
@@ -59,12 +61,11 @@ photoRoutes.post('/', async (c) => {
       takenOn || null,
       c.get('user').id,
     ),
-    ...(setCover
-      ? [c.env.DB.prepare(`UPDATE ${table} SET cover_photo_id = ?, updated_at = ? WHERE id = ?`).bind(id, nowIso(), subject.id)]
-      : []),
+    c.env.DB.prepare(`UPDATE ${table} SET cover_photo_id = ?, updated_at = ? WHERE id = ?`).bind(id, nowIso(), subject.id),
   ]);
-  if (subjectType === 'pot' && (await markForSync(c.env, 'pot', subject.id))) {
-    c.executionCtx.waitUntil(syncToWoo(c.env, 'pot', subject.id));
+  // Listed items get the new featured image in the shop.
+  if (await markForSync(c.env, subjectType, subject.id)) {
+    c.executionCtx.waitUntil(syncToWoo(c.env, subjectType, subject.id));
   }
   const row = await c.env.DB.prepare('SELECT * FROM photos WHERE id = ?').bind(id).first<PhotoRow>();
   return c.json(photoView(c.env, row!), 201);

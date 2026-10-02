@@ -2,6 +2,13 @@
 
 Each question below already has a sensible default built in. Answer any where the default is wrong.
 
+## Decided
+- **Photo storage:** Cloudflare R2. No Google Drive archive.
+- **Photo size:** compressed on the phone to WebP under 100 KB; no full-resolution originals are kept.
+- **Photos per bonsai:** every photo is kept as the growth record and shown on the certificate. The
+  newest photo is the featured image in the app, on the certificate and in the potr.in shop (the only
+  image sent to the shop).
+
 ## Certificate and traceability
 1. **Code format.** Codes currently look like `POTR-B-00001` for bonsai and `POTR-P-00001` for pots. Do
    you want a different prefix or format, for example one that includes the year?

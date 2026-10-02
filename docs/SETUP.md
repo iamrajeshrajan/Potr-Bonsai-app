@@ -93,5 +93,5 @@ weatherproof stock for pots kept outdoors.
 | --- | --- | --- |
 | Workers | 100k requests/day | Thousands |
 | D1 | 5 GB storage, 5M reads/day | Megabytes |
-| R2 | 10 GB storage, no egress fees | About 300 KB per photo, so roughly 30k photos |
+| R2 | 10 GB storage, no egress fees (a card on file is needed to enable R2) | Under 100 KB per photo, so about 100k photos |
 | GitHub Actions | 2,000 min/month (private repo) | About 6 min per APK build |
