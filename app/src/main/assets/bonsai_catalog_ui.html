@@ -59,6 +59,9 @@
         <button id="nav-showcase" class="nav-tab flex-1 md:flex-initial px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors text-[#5C584F] hover:text-[#1F2421]">
           Showcase
         </button>
+        <button id="nav-admin" class="nav-tab flex-1 md:flex-initial px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors text-[#5C584F] hover:text-[#1F2421]">
+          Schedules
+        </button>
       </nav>
 
       <!-- Primary CTA -->
@@ -211,6 +214,20 @@
       <div id="showcase-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
     </section>
 
+    <!-- ADMIN: PER-SPECIES CARE SCHEDULES -->
+    <section id="view-admin" class="hidden space-y-5">
+      <div class="bg-white rounded-2xl p-5 border border-[#E5E0D5]">
+        <h2 class="text-base font-semibold text-[#1F2421]">Care Schedules by Species</h2>
+        <p class="text-xs text-[#6E6A61] mt-1">Define the care actions and reminder timelines for each species. A species must have at least one rule here before it can be cataloged.</p>
+        <div class="flex flex-col sm:flex-row gap-2 mt-4">
+          <input id="new-species-name" type="text" placeholder="e.g., Ficus microcarpa" class="flex-1 px-3 py-2 rounded-xl border border-[#E5E0D5] text-sm" />
+          <button type="button" id="btn-add-species" class="px-4 py-2 rounded-xl bg-[#2D4A3E] hover:bg-[#233B31] text-white text-xs sm:text-sm font-medium shrink-0">Add Species</button>
+        </div>
+      </div>
+
+      <div id="admin-species-list" class="space-y-4"></div>
+    </section>
+
   </main>
 
   <!-- MODAL 1: SPECIMEN DETAIL DRAWER / MODAL -->
@@ -223,6 +240,9 @@
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <button id="detail-publish-btn" class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors">Published</button>
+          <button id="btn-delete-specimen" class="p-1.5 rounded-lg text-[#B85D3B] hover:bg-[#FDF1EC]" aria-label="Delete specimen" title="Delete specimen">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"/></svg>
+          </button>
           <button id="btn-close-detail" class="p-1.5 rounded-lg text-[#6E6A61] hover:bg-[#F2EFE8] hover:text-[#1F2421]" aria-label="Close detail">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
@@ -350,10 +370,7 @@
               <h4 class="text-sm font-semibold text-[#1F2421]">Scheduled Actions &amp; Alerts</h4>
               <p class="text-xs text-[#6E6A61]">Schedule care rules (e.g., Hard Pruning in 30 days, Root Check 90 days post-pruning).</p>
             </div>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <button id="btn-quick-prune" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#FAF9F6] hover:bg-[#EFECE4] border border-[#E5E0D5] text-[#1F2421]">+ Hard Pruning (30d)</button>
-              <button id="btn-quick-root" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#FAF9F6] hover:bg-[#EFECE4] border border-[#E5E0D5] text-[#1F2421]">+ Root Check (90d)</button>
-            </div>
+            <div id="detail-quick-actions" class="flex flex-wrap items-center gap-1.5"></div>
           </div>
           <div id="detail-actions-list" class="space-y-2"></div>
         </div>
@@ -455,6 +472,7 @@
           <div>
             <label class="block text-xs font-semibold text-[#1F2421] mb-1">Species *</label>
             <input id="new-species" type="text" required placeholder="Ficus microcarpa" class="w-full px-3 py-2 rounded-xl border border-[#E5E0D5] text-sm" />
+            <p id="new-species-warning" class="hidden text-[11px] text-[#B85D3B] mt-1">No care schedule defined for this species yet — add one in the Schedules tab first.</p>
           </div>
           <div>
             <label class="block text-xs font-semibold text-[#1F2421] mb-1">Subspecies / Cultivar</label>
@@ -536,37 +554,28 @@
         <div>
           <label class="block text-xs font-semibold text-[#1F2421] mb-1">Initial Scheduled Action</label>
           <select id="new-initial-action" class="w-full px-3 py-2 rounded-xl border border-[#E5E0D5] text-sm bg-white">
-            <option value="Hard Pruning|30">Hard Pruning (Schedule in +30 days)</option>
-            <option value="Root Check|90">Root Check (Schedule in +90 days)</option>
-            <option value="Wire Inspection|14">Wire Inspection (Schedule in +14 days)</option>
-            <option value="Repotting|90">Repotting (Schedule in +90 days)</option>
-            <optgroup id="saved-custom-actions-group" label="Saved Custom Actions" class="hidden"></optgroup>
-            <option value="other">Other (Custom Action)...</option>
             <option value="none">No initial alert</option>
           </select>
-          <div id="new-custom-action-wrap" class="hidden mt-2.5 p-3 rounded-xl bg-[#FAF9F6] border border-[#E5E0D5] space-y-2">
-            <div class="grid grid-cols-3 gap-2">
-              <div class="col-span-2">
-                <label class="block text-[11px] font-semibold text-[#1F2421] mb-1">Custom Action *</label>
-                <input id="new-custom-action-text" type="text" placeholder="e.g., Foliar Feed &amp; Neem Spray" class="w-full px-2.5 py-1.5 rounded-lg border border-[#E5E0D5] text-xs bg-white" />
-              </div>
-              <div>
-                <label class="block text-[11px] font-semibold text-[#1F2421] mb-1">Due (days)</label>
-                <input id="new-custom-action-days" type="number" min="1" max="365" value="30" class="w-full px-2.5 py-1.5 rounded-lg border border-[#E5E0D5] text-xs bg-white" />
-              </div>
-            </div>
-            <label class="flex items-center gap-2 text-[11px] text-[#5C584F] cursor-pointer">
-              <input id="new-custom-action-save" type="checkbox" checked class="rounded border-[#D6D0C4] text-[#2D4A3E]" />
-              Save this action to dropdown for future plants
-            </label>
-          </div>
+          <p class="text-[11px] text-[#6E6A61] mt-1">Options come from this species' care schedule, defined in the Schedules tab.</p>
         </div>
 
         <div class="flex items-center justify-end gap-2 pt-2">
           <button type="button" id="btn-cancel-add" class="px-4 py-2 rounded-xl text-xs font-medium text-[#5C584F] hover:bg-[#F2EFE8]">Cancel</button>
-          <button type="submit" class="px-4 py-2 rounded-xl text-xs font-medium bg-[#2D4A3E] hover:bg-[#233B31] text-white shadow-sm">Save to Catalog</button>
+          <button type="submit" id="btn-save-add" class="px-4 py-2 rounded-xl text-xs font-medium bg-[#2D4A3E] hover:bg-[#233B31] text-white shadow-sm">Save to Catalog</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIRM DELETE SPECIMEN -->
+  <div id="delete-confirm-modal" class="fixed inset-0 z-[60] hidden bg-black/55 backdrop-blur-xs flex items-center justify-center p-3">
+    <div class="bg-white rounded-2xl max-w-sm w-full shadow-2xl border border-[#E5E0D5] p-5 space-y-3">
+      <h3 class="text-base font-semibold text-[#1F2421]">Delete this specimen?</h3>
+      <p id="delete-confirm-text" class="text-xs text-[#6E6A61]">This permanently removes the specimen, its actions, and its timeline from this device. This cannot be undone.</p>
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button type="button" id="btn-cancel-delete" class="px-4 py-2 rounded-xl text-xs font-medium text-[#5C584F] hover:bg-[#F2EFE8]">Cancel</button>
+        <button type="button" id="btn-confirm-delete" class="px-4 py-2 rounded-xl text-xs font-medium bg-[#B85D3B] hover:bg-[#A24F30] text-white">Delete</button>
+      </div>
     </div>
   </div>
 
@@ -637,7 +646,6 @@
     };
 
     // Initial state representing specimens from a 1,000-tree collection
-    const BASE_COLLECTION_OFFSET = 992; // 992 + 8 detailed starter records = 1,000 total
     function formatINR(n) {
       return "₹" + (Number(n) || 0).toLocaleString("en-IN");
     }
@@ -645,7 +653,7 @@
       return (Number(s.purchasePrice) || 0) + (Number(s.newPotPrice) || 0) + (Number(s.effortCost) || 0);
     }
 
-    let specimens = [
+    const DEFAULT_SPECIMENS = [
       {
         id: "bns-1",
         code: "BNS-0042",
@@ -906,6 +914,61 @@
       }
     ];
 
+    // Persistence: specimens are saved to localStorage so data survives app restarts.
+    // DEFAULT_SPECIMENS is only used to seed a brand-new install.
+    const SPECIMENS_KEY = "potr_specimens_v1";
+    function loadSpecimens() {
+      try {
+        const raw = localStorage.getItem(SPECIMENS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch (_) {}
+      return DEFAULT_SPECIMENS;
+    }
+    function saveSpecimens() {
+      try { localStorage.setItem(SPECIMENS_KEY, JSON.stringify(specimens)); } catch (_) {}
+    }
+
+    // Per-species care schedules, defined in the Schedules (Admin) tab.
+    // Shape: { "<lowercase species>": { displayName: "Ficus microcarpa", rules: [{ id, title, days }] } }
+    const CARE_SCHEDULES_KEY = "potr_care_schedules_v1";
+    const DEFAULT_CARE_SCHEDULES = {
+      "ficus microcarpa": { displayName: "Ficus microcarpa", rules: [
+        { id: "rule-1", title: "Hard Pruning", days: 30 },
+        { id: "rule-2", title: "Root Check", days: 90 }
+      ]},
+      "juniperus chinensis": { displayName: "Juniperus chinensis", rules: [
+        { id: "rule-3", title: "Hard Pruning", days: 30 },
+        { id: "rule-4", title: "Root Check", days: 90 }
+      ]},
+      "acer palmatum": { displayName: "Acer palmatum", rules: [
+        { id: "rule-5", title: "Hard Pruning", days: 30 },
+        { id: "rule-6", title: "Root Check", days: 90 }
+      ]},
+      "bougainvillea glabra": { displayName: "Bougainvillea glabra", rules: [
+        { id: "rule-7", title: "Hard Pruning", days: 30 },
+        { id: "rule-8", title: "Root Check", days: 90 }
+      ]}
+    };
+    function loadCareSchedules() {
+      try {
+        const raw = localStorage.getItem(CARE_SCHEDULES_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (_) {}
+      return JSON.parse(JSON.stringify(DEFAULT_CARE_SCHEDULES));
+    }
+    function saveCareSchedules() {
+      try { localStorage.setItem(CARE_SCHEDULES_KEY, JSON.stringify(careSchedules)); } catch (_) {}
+    }
+    function speciesKey(name) {
+      return (name || "").trim().toLowerCase();
+    }
+
+    let specimens = loadSpecimens();
+    let careSchedules = loadCareSchedules();
+
     let activeTab = "catalog";
     let activeFilter = "all";
     let viewMode = "grid";
@@ -936,7 +999,7 @@
     }
 
     function updateKPIs() {
-      const total = BASE_COLLECTION_OFFSET + specimens.length;
+      const total = specimens.length;
       let due = 0, upcoming = 0, published = 0;
       specimens.forEach(s => {
         if (s.published) published++;
@@ -971,9 +1034,11 @@
 
     function renderCatalog() {
       const list = getFilteredSpecimens();
-      const total = BASE_COLLECTION_OFFSET + specimens.length;
+      const total = specimens.length;
       document.getElementById("catalog-count-label").textContent =
-        `Showing ${list.length} specimen${list.length === 1 ? "" : "s"} (from ${total.toLocaleString()}-tree collection)`;
+        list.length === total
+          ? `Showing ${total} specimen${total === 1 ? "" : "s"}`
+          : `Showing ${list.length} of ${total} specimen${total === 1 ? "" : "s"}`;
 
       const gridEl = document.getElementById("catalog-grid");
       const tableWrap = document.getElementById("catalog-table-wrap");
@@ -1181,10 +1246,23 @@
       }
 
       renderTipForSpecimen(s);
+      renderDetailQuickActions(s);
       renderDetailActions(s);
       renderDetailTimeline(s);
 
       document.getElementById("detail-modal").classList.remove("hidden");
+    }
+
+    function renderDetailQuickActions(s) {
+      const el = document.getElementById("detail-quick-actions");
+      const schedule = careSchedules[speciesKey(s.species)];
+      if (!schedule || schedule.rules.length === 0) {
+        el.innerHTML = `<span class="text-[11px] text-[#8C877D]">No care schedule defined for ${s.species} — add one in the Schedules tab.</span>`;
+        return;
+      }
+      el.innerHTML = schedule.rules.map(r => `
+        <button data-quick-rule="${r.id}" class="btn-quick-action px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#FAF9F6] hover:bg-[#EFECE4] border border-[#E5E0D5] text-[#1F2421]">+ ${r.title} (${r.days}d)</button>
+      `).join("");
     }
 
     function renderDetailPricing(s) {
@@ -1296,6 +1374,7 @@
       document.getElementById("view-catalog").classList.toggle("hidden", tab !== "catalog");
       document.getElementById("view-alerts").classList.toggle("hidden", tab !== "alerts");
       document.getElementById("view-showcase").classList.toggle("hidden", tab !== "showcase");
+      document.getElementById("view-admin").classList.toggle("hidden", tab !== "admin");
 
       document.querySelectorAll(".nav-tab").forEach(btn => {
         btn.classList.remove("bg-white", "text-[#1F2421]", "shadow-sm");
@@ -1308,6 +1387,7 @@
       if (tab === "catalog") renderCatalog();
       if (tab === "alerts") renderAlerts();
       if (tab === "showcase") renderShowcase();
+      if (tab === "admin") renderAdmin();
     }
 
     function refreshAll() {
@@ -1316,6 +1396,95 @@
       renderAlerts();
       renderShowcase();
     }
+
+    // Admin / Schedules tab: per-species care action rules
+    function renderAdmin() {
+      const el = document.getElementById("admin-species-list");
+      const keys = Object.keys(careSchedules).sort((a, b) =>
+        careSchedules[a].displayName.localeCompare(careSchedules[b].displayName));
+
+      if (keys.length === 0) {
+        el.innerHTML = `<div class="bg-white rounded-2xl p-6 text-center border border-[#E5E0D5] text-sm text-[#6E6A61]">No species defined yet. Add one above.</div>`;
+        return;
+      }
+
+      el.innerHTML = keys.map(key => {
+        const sch = careSchedules[key];
+        const rulesHtml = sch.rules.length === 0
+          ? `<div class="text-xs text-[#8C877D]">No rules yet — add one below.</div>`
+          : sch.rules.map(r => `
+              <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#FAF9F6] border border-[#E5E0D5]">
+                <span class="text-xs text-[#1F2421]"><strong>${r.title}</strong> — every ${r.days} days</span>
+                <button type="button" data-remove-rule-species="${key}" data-remove-rule-id="${r.id}" class="text-[11px] font-medium text-[#B85D3B] hover:underline">Remove</button>
+              </div>
+            `).join("");
+        return `
+          <div class="bg-white rounded-2xl p-5 border border-[#E5E0D5] space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-[#1F2421]">${sch.displayName}</h3>
+              <button type="button" data-remove-species="${key}" class="text-[11px] font-medium text-[#B85D3B] hover:underline">Remove Species</button>
+            </div>
+            <div class="space-y-1.5">${rulesHtml}</div>
+            <div class="flex flex-col sm:flex-row gap-2 pt-1">
+              <input type="text" placeholder="Action name (e.g., Wire Inspection)" data-rule-title-for="${key}" class="flex-1 px-2.5 py-1.5 rounded-lg border border-[#E5E0D5] text-xs" />
+              <input type="number" min="1" max="3650" placeholder="Days" data-rule-days-for="${key}" class="w-24 px-2.5 py-1.5 rounded-lg border border-[#E5E0D5] text-xs" />
+              <button type="button" data-add-rule-for="${key}" class="px-3 py-1.5 rounded-lg bg-[#2D4A3E] hover:bg-[#233B31] text-white text-xs font-medium shrink-0">Add Rule</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    document.getElementById("btn-add-species").addEventListener("click", () => {
+      const input = document.getElementById("new-species-name");
+      const name = input.value.trim();
+      if (!name) return;
+      const key = speciesKey(name);
+      if (!careSchedules[key]) {
+        careSchedules[key] = { displayName: name, rules: [] };
+        saveCareSchedules();
+      }
+      input.value = "";
+      renderAdmin();
+      showToast(`Added species "${name}" — now add its care rules`);
+    });
+
+    document.getElementById("admin-species-list").addEventListener("click", e => {
+      const addBtn = e.target.closest("[data-add-rule-for]");
+      if (addBtn) {
+        const key = addBtn.dataset.addRuleFor;
+        const titleInput = document.querySelector(`[data-rule-title-for="${key}"]`);
+        const daysInput = document.querySelector(`[data-rule-days-for="${key}"]`);
+        const title = titleInput.value.trim();
+        const days = parseInt(daysInput.value, 10);
+        if (!title || !days || days < 1) {
+          showToast("Enter a rule name and a positive number of days");
+          return;
+        }
+        careSchedules[key].rules.push({ id: "rule-" + Date.now(), title, days });
+        saveCareSchedules();
+        renderAdmin();
+        showToast(`Added "${title}" (+${days}d) to ${careSchedules[key].displayName}`);
+        return;
+      }
+      const removeRuleBtn = e.target.closest("[data-remove-rule-species]");
+      if (removeRuleBtn) {
+        const key = removeRuleBtn.dataset.removeRuleSpecies;
+        const ruleId = removeRuleBtn.dataset.removeRuleId;
+        careSchedules[key].rules = careSchedules[key].rules.filter(r => r.id !== ruleId);
+        saveCareSchedules();
+        renderAdmin();
+        return;
+      }
+      const removeSpeciesBtn = e.target.closest("[data-remove-species]");
+      if (removeSpeciesBtn) {
+        const key = removeSpeciesBtn.dataset.removeSpecies;
+        delete careSchedules[key];
+        saveCareSchedules();
+        renderAdmin();
+        showToast("Species schedule removed");
+      }
+    });
 
     // Event Listeners
     document.getElementById("brand-home-link").addEventListener("click", e => {
@@ -1355,6 +1524,7 @@
     document.getElementById("nav-catalog").addEventListener("click", () => switchTab("catalog"));
     document.getElementById("nav-alerts").addEventListener("click", () => switchTab("alerts"));
     document.getElementById("nav-showcase").addEventListener("click", () => switchTab("showcase"));
+    document.getElementById("nav-admin").addEventListener("click", () => switchTab("admin"));
 
     document.getElementById("search-input").addEventListener("input", e => {
       searchQuery = e.target.value;
@@ -1396,6 +1566,21 @@
         openActionModal(actionBtn.dataset.actionSpec, actionBtn.dataset.actionId);
         return;
       }
+      const quickBtn = e.target.closest("[data-quick-rule]");
+      if (quickBtn) {
+        e.stopPropagation();
+        const s = specimens.find(x => x.id === selectedSpecimenId);
+        if (!s) return;
+        const schedule = careSchedules[speciesKey(s.species)];
+        const rule = schedule && schedule.rules.find(r => r.id === quickBtn.dataset.quickRule);
+        if (!rule) return;
+        s.actions.push({ id: "act-" + Date.now(), title: rule.title, dueInDays: rule.days, rule: `Scheduled +${rule.days} days from today`, status: "upcoming" });
+        saveSpecimens();
+        renderDetailActions(s);
+        refreshAll();
+        showToast(`Scheduled ${rule.title} in +${rule.days} days`);
+        return;
+      }
       const openEl = e.target.closest("[data-open-id]");
       if (openEl) {
         openDetailModal(openEl.dataset.openId);
@@ -1411,9 +1596,33 @@
       const s = specimens.find(x => x.id === selectedSpecimenId);
       if (!s) return;
       s.published = !s.published;
+      saveSpecimens();
       openDetailModal(s.id);
       refreshAll();
       showToast(s.published ? `${s.code} published to Showcase` : `${s.code} moved to Private`);
+    });
+
+    document.getElementById("btn-delete-specimen").addEventListener("click", () => {
+      const s = specimens.find(x => x.id === selectedSpecimenId);
+      if (!s) return;
+      document.getElementById("delete-confirm-text").textContent =
+        `This permanently removes "${s.name}" (${s.code}), its actions, and its timeline from this device. This cannot be undone.`;
+      document.getElementById("delete-confirm-modal").classList.remove("hidden");
+    });
+
+    document.getElementById("btn-cancel-delete").addEventListener("click", () => {
+      document.getElementById("delete-confirm-modal").classList.add("hidden");
+    });
+
+    document.getElementById("btn-confirm-delete").addEventListener("click", () => {
+      const s = specimens.find(x => x.id === selectedSpecimenId);
+      document.getElementById("delete-confirm-modal").classList.add("hidden");
+      if (!s) return;
+      specimens = specimens.filter(x => x.id !== s.id);
+      saveSpecimens();
+      document.getElementById("detail-modal").classList.add("hidden");
+      refreshAll();
+      showToast(`Deleted ${s.name} (${s.code})`);
     });
 
     document.getElementById("btn-refresh-tip").addEventListener("click", () => {
@@ -1432,23 +1641,6 @@
       showToast(`Bench Tag ${s.code} copied`);
     });
 
-    document.getElementById("btn-quick-prune").addEventListener("click", () => {
-      const s = specimens.find(x => x.id === selectedSpecimenId);
-      if (!s) return;
-      s.actions.push({ id: "act-" + Date.now(), title: "Hard Pruning", dueInDays: 30, rule: "Scheduled 30 days from report", status: "upcoming" });
-      renderDetailActions(s);
-      refreshAll();
-      showToast("Scheduled Hard Pruning in +30 days");
-    });
-
-    document.getElementById("btn-quick-root").addEventListener("click", () => {
-      const s = specimens.find(x => x.id === selectedSpecimenId);
-      if (!s) return;
-      s.actions.push({ id: "act-" + Date.now(), title: "Root Check", dueInDays: 90, rule: "90 days post-hard pruning", status: "upcoming" });
-      renderDetailActions(s);
-      refreshAll();
-      showToast("Scheduled Root Check in +90 days");
-    });
 
     // Action Modal Controls
     document.getElementById("btn-close-action").addEventListener("click", () => document.getElementById("action-modal").classList.add("hidden"));
@@ -1507,6 +1699,7 @@
         });
       }
 
+      saveSpecimens();
       document.getElementById("action-modal").classList.add("hidden");
       if (selectedSpecimenId === s.id && !document.getElementById("detail-modal").classList.contains("hidden")) {
         openDetailModal(s.id);
@@ -1517,8 +1710,9 @@
 
     // Add Bonsai Modal Controls
     document.getElementById("btn-open-add").addEventListener("click", () => {
-      const nextNum = BASE_COLLECTION_OFFSET + specimens.length + 1;
+      const nextNum = specimens.length + 1;
       document.getElementById("new-code").value = `BNS-${nextNum}`;
+      refreshSpeciesScheduleUI();
       document.getElementById("add-modal").classList.remove("hidden");
     });
     document.getElementById("btn-close-add").addEventListener("click", () => document.getElementById("add-modal").classList.add("hidden"));
@@ -1551,40 +1745,33 @@
       document.getElementById("btn-clear-photo").classList.add("hidden");
     });
 
-    // Saved Custom Actions persistence
-    const CUSTOM_ACTIONS_KEY = "potr_custom_actions_v1";
-    function loadSavedCustomActions() {
-      try {
-        return JSON.parse(localStorage.getItem(CUSTOM_ACTIONS_KEY) || "[]");
-      } catch { return []; }
-    }
-    function renderSavedCustomActions() {
-      const grp = document.getElementById("saved-custom-actions-group");
-      const list = loadSavedCustomActions();
-      grp.innerHTML = "";
-      if (list.length === 0) {
-        grp.classList.add("hidden");
-        return;
-      }
-      grp.classList.remove("hidden");
-      list.forEach(item => {
-        const opt = document.createElement("option");
-        opt.value = `${item.title}|${item.days}`;
-        opt.textContent = `${item.title} (Schedule in +${item.days} days)`;
-        grp.appendChild(opt);
-      });
-    }
-    renderSavedCustomActions();
+    // Populate the "Initial Scheduled Action" dropdown from the typed species' care schedule,
+    // and gate the Save button on a schedule existing for that species.
+    function refreshSpeciesScheduleUI() {
+      const species = document.getElementById("new-species").value.trim();
+      const key = speciesKey(species);
+      const schedule = key ? careSchedules[key] : null;
+      const warning = document.getElementById("new-species-warning");
+      const select = document.getElementById("new-initial-action");
+      const saveBtn = document.getElementById("btn-save-add");
 
-    document.getElementById("new-initial-action").addEventListener("change", e => {
-      const wrap = document.getElementById("new-custom-action-wrap");
-      if (e.target.value === "other") {
-        wrap.classList.remove("hidden");
-        document.getElementById("new-custom-action-text").focus();
-      } else {
-        wrap.classList.add("hidden");
+      select.innerHTML = '<option value="none">No initial alert</option>';
+      if (schedule) {
+        schedule.rules.forEach(r => {
+          const opt = document.createElement("option");
+          opt.value = `${r.title}|${r.days}`;
+          opt.textContent = `${r.title} (Schedule in +${r.days} days)`;
+          select.appendChild(opt);
+        });
       }
-    });
+
+      const hasSchedule = !!(schedule && species);
+      warning.classList.toggle("hidden", hasSchedule || !species);
+      saveBtn.disabled = species.length > 0 && !hasSchedule;
+      saveBtn.classList.toggle("opacity-50", saveBtn.disabled);
+      saveBtn.classList.toggle("cursor-not-allowed", saveBtn.disabled);
+    }
+    document.getElementById("new-species").addEventListener("input", refreshSpeciesScheduleUI);
 
     // Live Estimated Current Price calculation in Add Form
     function updateAddEstimatedPrice() {
@@ -1608,6 +1795,7 @@
       s.newPotPrice = parseFloat(document.getElementById("edit-pot-price").value) || 0;
       s.effortCost = parseFloat(document.getElementById("edit-effort-cost").value) || 0;
       s.sellingPrice = parseFloat(document.getElementById("edit-selling-price").value) || 0;
+      saveSpecimens();
       renderDetailPricing(s);
       document.getElementById("detail-price-edit-box").classList.add("hidden");
       refreshAll();
@@ -1625,20 +1813,13 @@
       const pot = document.getElementById("new-pot").value.trim() || "Handcrafted Terracotta Oval";
       const initAct = document.getElementById("new-initial-action").value;
 
+      if (!careSchedules[speciesKey(species)]) {
+        showToast(`Define a care schedule for "${species}" in the Schedules tab first.`);
+        return;
+      }
+
       const actions = [];
-      if (initAct === "other") {
-        const customTitle = document.getElementById("new-custom-action-text").value.trim() || "Custom Care Action";
-        const customDays = parseInt(document.getElementById("new-custom-action-days").value, 10) || 30;
-        actions.push({ id: "act-" + Date.now(), title: customTitle, dueInDays: customDays, rule: `Scheduled +${customDays} days from catalog`, status: "upcoming" });
-        if (document.getElementById("new-custom-action-save").checked) {
-          const saved = loadSavedCustomActions();
-          if (!saved.some(x => x.title.toLowerCase() === customTitle.toLowerCase() && x.days === customDays)) {
-            saved.push({ title: customTitle, days: customDays });
-            localStorage.setItem(CUSTOM_ACTIONS_KEY, JSON.stringify(saved));
-            renderSavedCustomActions();
-          }
-        }
-      } else if (initAct !== "none") {
+      if (initAct !== "none") {
         const [title, daysStr] = initAct.split("|");
         const days = parseInt(daysStr, 10);
         actions.push({ id: "act-" + Date.now(), title, dueInDays: days, rule: `Scheduled +${days} days from catalog`, status: "upcoming" });
@@ -1680,14 +1861,15 @@
         timeline: []
       });
 
+      saveSpecimens();
       uploadedNewPhotoDataUrl = null;
       document.getElementById("new-photo-preview").classList.add("hidden");
       document.getElementById("new-photo-preview").src = "";
       document.getElementById("new-photo-label").textContent = "Optional — defaults to species photo if skipped";
       document.getElementById("btn-clear-photo").classList.add("hidden");
-      document.getElementById("new-custom-action-wrap").classList.add("hidden");
       document.getElementById("add-form").reset();
       updateAddEstimatedPrice();
+      refreshSpeciesScheduleUI();
       document.getElementById("add-modal").classList.add("hidden");
       switchTab("catalog");
       refreshAll();
@@ -1770,6 +1952,15 @@
           <div class="flex justify-end pt-1">
             <button type="button" id="btn-save-wc-config" class="px-3 py-1.5 rounded-lg bg-[#2D4A3E] text-white font-medium">Save potr.in Credentials</button>
           </div>
+        </div>
+
+        <!-- App Update -->
+        <div class="p-3.5 rounded-xl bg-[#FAF9F6] border border-[#E5E0D5] flex items-center justify-between gap-3">
+          <div>
+            <div class="font-semibold text-[#1F2421]">App Version</div>
+            <div class="text-[11px] text-[#5C584F] mt-0.5" id="app-update-status">Checking current version…</div>
+          </div>
+          <button type="button" id="btn-check-update" class="px-3 py-1.5 rounded-lg bg-white border border-[#E5E0D5] hover:bg-[#F2EFE8] text-[#1F2421] font-medium shrink-0">Check for Update</button>
         </div>
       </div>
     </div>
@@ -1875,6 +2066,53 @@
 
       window.onNativeToast = function(msg) {
         showToast(msg);
+      };
+
+      let pendingUpdateDownloadUrl = null;
+
+      if (window.AndroidBridge && window.AndroidBridge.getAppVersionName) {
+        try {
+          document.getElementById("app-update-status").textContent =
+            "Version " + window.AndroidBridge.getAppVersionName();
+        } catch (_) {}
+      }
+
+      document.getElementById("btn-check-update")?.addEventListener("click", () => {
+        if (pendingUpdateDownloadUrl) {
+          if (window.AndroidBridge && window.AndroidBridge.downloadAndInstallUpdate) {
+            window.AndroidBridge.downloadAndInstallUpdate(pendingUpdateDownloadUrl);
+            document.getElementById("app-update-status").textContent = "Downloading update…";
+          }
+          pendingUpdateDownloadUrl = null;
+          document.getElementById("btn-check-update").textContent = "Check for Update";
+          return;
+        }
+        if (window.AndroidBridge && window.AndroidBridge.checkForUpdate) {
+          document.getElementById("app-update-status").textContent = "Checking GitHub for the latest release…";
+          window.AndroidBridge.checkForUpdate();
+        } else {
+          showToast("Update check runs inside the POTR Bonsai Android APK");
+        }
+      });
+
+      window.onUpdateCheckResult = function(resultObj) {
+        const statusEl = document.getElementById("app-update-status");
+        const btn = document.getElementById("btn-check-update");
+        if (!resultObj) {
+          statusEl.textContent = "Could not check for updates — check your connection.";
+          return;
+        }
+        if (resultObj.error) {
+          statusEl.textContent = resultObj.error;
+          return;
+        }
+        if (resultObj.updateAvailable) {
+          pendingUpdateDownloadUrl = resultObj.downloadUrl;
+          statusEl.textContent = `Version ${resultObj.latestVersion} is available (you have ${resultObj.currentVersion}).`;
+          btn.textContent = "Download & Install";
+        } else {
+          statusEl.textContent = `You're on the latest version (${resultObj.currentVersion}).`;
+        }
       };
     })();
   </script>

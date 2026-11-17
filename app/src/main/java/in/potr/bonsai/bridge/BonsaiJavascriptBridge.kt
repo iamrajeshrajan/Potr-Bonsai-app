@@ -14,9 +14,30 @@ class BonsaiJavascriptBridge(
     private val onSignInRequested: () -> Unit,
     private val onCaptureAndCompressRequested: (String) -> Unit,
     private val onSyncSheetRequested: (JSONArray) -> Unit,
-    private val onPublishWooRequested: (JSONObject) -> Unit
+    private val onPublishWooRequested: (JSONObject) -> Unit,
+    private val onCheckUpdateRequested: () -> Unit,
+    private val onDownloadUpdateRequested: (String) -> Unit
 ) {
     private val prefs = context.getSharedPreferences("potr_bonsai_prefs", Context.MODE_PRIVATE)
+
+    @JavascriptInterface
+    fun getAppVersionName(): String {
+        return try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    @JavascriptInterface
+    fun checkForUpdate() {
+        onCheckUpdateRequested()
+    }
+
+    @JavascriptInterface
+    fun downloadAndInstallUpdate(apkUrl: String) {
+        onDownloadUpdateRequested(apkUrl)
+    }
 
     @JavascriptInterface
     fun signInWithGoogle() {

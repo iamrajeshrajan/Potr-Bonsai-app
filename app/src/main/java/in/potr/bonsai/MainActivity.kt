@@ -5,7 +5,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -15,6 +17,7 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -23,6 +26,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
 import `in`.potr.bonsai.bridge.BonsaiJavascriptBridge
 import `in`.potr.bonsai.cloud.GoogleWorkspaceService
+import `in`.potr.bonsai.cloud.UpdateChecker
 import `in`.potr.bonsai.cloud.WooCommercePublisher
 import `in`.potr.bonsai.util.PhotoCompressor
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -39,6 +44,7 @@ class MainActivity : AppCompatActivity() {
 
     private val workspaceService = GoogleWorkspaceService()
     private val wooPublisher = WooCommercePublisher()
+    private val updateChecker = UpdateChecker(repoOwner = "iamrajeshrajan", repoName = "Potr-Bonsai-app")
 
     private val prefs by lazy {
         getSharedPreferences("potr_bonsai_prefs", Context.MODE_PRIVATE)
@@ -139,7 +145,9 @@ class MainActivity : AppCompatActivity() {
                     nativePhotoCompressLauncher.launch("image/*")
                 },
                 onSyncSheetRequested = { specimensArray -> syncToGoogleSheet(specimensArray) },
-                onPublishWooRequested = { specimenObj -> publishToPotrWooCommerce(specimenObj) }
+                onPublishWooRequested = { specimenObj -> publishToPotrWooCommerce(specimenObj) },
+                onCheckUpdateRequested = { checkForAppUpdate() },
+                onDownloadUpdateRequested = { apkUrl -> downloadAndInstallUpdate(apkUrl) }
             ),
             "AndroidBridge"
         )
@@ -285,6 +293,60 @@ class MainActivity : AppCompatActivity() {
             GoogleAuthUtil.getToken(this@MainActivity, acct, scopes)
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun checkForAppUpdate() {
+        val currentVersion = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                updateChecker.checkLatestRelease(currentVersion)
+            }
+            val json = result.fold(
+                onSuccess = { r ->
+                    JSONObject().apply {
+                        put("updateAvailable", r.updateAvailable)
+                        put("currentVersion", r.currentVersion)
+                        put("latestVersion", r.latestVersion)
+                        put("downloadUrl", r.downloadUrl)
+                    }
+                },
+                onFailure = { e ->
+                    JSONObject().apply { put("error", "Update check failed: ${e.message}") }
+                }
+            )
+            webView.evaluateJavascript("window.onUpdateCheckResult($json);", null)
+        }
+    }
+
+    private fun downloadAndInstallUpdate(apkUrl: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            sendToastToWeb("Allow 'Install unknown apps' for this app, then tap Download & Install again")
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+            )
+            return
+        }
+        lifecycleScope.launch {
+            try {
+                val destFile = File(cacheDir, "downloads/potr-bonsai-update.apk")
+                withContext(Dispatchers.IO) {
+                    updateChecker.downloadApk(apkUrl, destFile).getOrThrow()
+                }
+                val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.fileprovider", destFile)
+                val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(installIntent)
+            } catch (e: Exception) {
+                sendToastToWeb("Update download failed: ${e.message}")
+            }
         }
     }
 
