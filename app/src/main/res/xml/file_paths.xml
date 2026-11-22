@@ -3,4 +3,5 @@
     <cache-path name="camera_captures" path="captures/" />
     <cache-path name="apk_downloads" path="downloads/" />
     <files-path name="compressed_media" path="compressed/" />
+    <files-path name="queued_videos" path="videos/" />
 </paths>

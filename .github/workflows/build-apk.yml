@@ -43,13 +43,13 @@ jobs:
             echo "No custom KEYSTORE_BASE64 secret found; using automatic Android signing so APK installs immediately."
           fi
 
-      - name: Build Debug & Release APKs
+      - name: Run Unit Tests & Build Debug/Release APKs
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          gradle assembleDebug assembleRelease --no-daemon --stacktrace
+          gradle :app:testDebugUnitTest assembleDebug assembleRelease --no-daemon --stacktrace
 
       - name: Print APK Signing SHA-1 Fingerprint (Copy this into Google Cloud Console for Google Sign-In)
         run: |
@@ -59,11 +59,20 @@ jobs:
           $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk || true
           echo "=================================================================="
 
-      - name: Rename APKs for Easy Download
+      - name: Prepare Release Metadata & Rename APKs
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/POTR-Bonsai-v1.0.${{ github.run_number }}-debug.apk
-          cp app/build/outputs/apk/release/app-release.apk dist/POTR-Bonsai-v1.0.${{ github.run_number }}-installable.apk
+          APP_VER=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          APP_VER=${APP_VER:-2.1.0}
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+          else
+            RELEASE_TAG="v${APP_VER}"
+          fi
+          echo "APP_VER=${APP_VER}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/POTR-Bonsai-v${APP_VER}.${{ github.run_number }}-debug.apk"
+          cp app/build/outputs/apk/release/app-release.apk "dist/POTR-Bonsai-v${APP_VER}.${{ github.run_number }}-installable.apk"
           ls -lh dist/
 
       - name: Upload Installable APK to GitHub Actions Artifacts
@@ -73,9 +82,13 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release (When a v* Tag is Pushed)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Auto-Publish GitHub Release for In-App Updater
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: POTR Bonsai ${{ env.RELEASE_TAG }}
           files: dist/*.apk
           generate_release_notes: true
+          make_latest: true
+          fail_on_unmatched_files: true

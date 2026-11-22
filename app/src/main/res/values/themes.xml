@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.POTRBonsai" parent="Theme.MaterialComponents.Light.NoActionBar">
-        <item name="android:statusBarColor">#FFFFFF</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">#F6F4EF</item>
+    <style name="Theme.POTRBonsai" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F6F4EF</item>
     </style>
 </resources>

@@ -7,10 +7,32 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
+object SemVerComparator {
+    fun isNewer(candidate: String, current: String): Boolean {
+        val cParts = parseParts(candidate)
+        val curParts = parseParts(current)
+        if (cParts.isEmpty() || curParts.isEmpty()) return false
+        val maxLen = maxOf(cParts.size, curParts.size)
+        for (i in 0 until maxLen) {
+            val a = cParts.getOrElse(i) { 0 }
+            val b = curParts.getOrElse(i) { 0 }
+            if (a != b) return a > b
+        }
+        return false
+    }
+
+    private fun parseParts(version: String): List<Int> =
+        version.trim()
+            .removePrefix("v")
+            .removePrefix("V")
+            .substringBefore("-")
+            .split(".")
+            .mapNotNull { it.toIntOrNull() }
+}
+
 /**
- * Checks GitHub Releases for a newer build of the app and downloads the APK asset.
- * Requires the GitHub repository to be public, since this uses the unauthenticated
- * "get latest release" endpoint.
+ * Checks GitHub Releases for a newer build of the app using semantic version comparison
+ * and downloads the APK asset.
  */
 class UpdateChecker(private val repoOwner: String, private val repoName: String) {
 
@@ -26,9 +48,6 @@ class UpdateChecker(private val repoOwner: String, private val repoName: String)
         val downloadUrl: String?
     )
 
-    /**
-     * Compares [currentVersion] against the latest published GitHub release's tag.
-     */
     fun checkLatestRelease(currentVersion: String): Result<UpdateResult> = runCatching {
         val req = Request.Builder()
             .url("https://api.github.com/repos/$repoOwner/$repoName/releases/latest")
@@ -38,11 +57,14 @@ class UpdateChecker(private val repoOwner: String, private val repoName: String)
 
         http.newCall(req).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
+            if (resp.code == 404) {
+                error("No published release found yet (push to GitHub & ensure repo is public)")
+            }
             if (!resp.isSuccessful) {
-                error("GitHub release check failed (${resp.code}): $body")
+                error("GitHub release check failed (HTTP ${resp.code})")
             }
             val json = JSONObject(body)
-            val tagName = json.optString("tag_name", "").removePrefix("v")
+            val tagName = json.optString("tag_name", "").removePrefix("v").removePrefix("V")
             val assets = json.optJSONArray("assets")
             var downloadUrl: String? = null
             if (assets != null) {
@@ -66,7 +88,7 @@ class UpdateChecker(private val repoOwner: String, private val repoName: String)
             }
 
             UpdateResult(
-                updateAvailable = tagName.isNotBlank() && tagName != currentVersion,
+                updateAvailable = SemVerComparator.isNewer(tagName, currentVersion),
                 currentVersion = currentVersion,
                 latestVersion = tagName.ifBlank { currentVersion },
                 downloadUrl = downloadUrl
@@ -74,9 +96,6 @@ class UpdateChecker(private val repoOwner: String, private val repoName: String)
         }
     }
 
-    /**
-     * Downloads the APK at [apkUrl] into [destFile], overwriting any previous download.
-     */
     fun downloadApk(apkUrl: String, destFile: File): Result<File> = runCatching {
         val req = Request.Builder().url(apkUrl).get().build()
         http.newCall(req).execute().use { resp ->
