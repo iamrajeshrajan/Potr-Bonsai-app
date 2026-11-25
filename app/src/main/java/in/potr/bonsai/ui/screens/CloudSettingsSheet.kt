@@ -1,6 +1,7 @@
 package `in`.potr.bonsai.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,10 +17,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,12 +48,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import `in`.potr.bonsai.ui.CloudSettingsState
+import `in`.potr.bonsai.ui.theme.JetBrainsMonoFamily
 import `in`.potr.bonsai.ui.theme.SageBorder
+import `in`.potr.bonsai.ui.theme.TerracottaBorder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,6 +65,7 @@ import java.util.Locale
 fun CloudSettingsDialog(
     cloud: CloudSettingsState,
     pendingVideoCount: Int,
+    appSha1: String,
     onSignInGoogle: () -> Unit,
     onSignOutGoogle: () -> Unit,
     onBackupNow: () -> Unit,
@@ -65,6 +76,7 @@ fun CloudSettingsDialog(
     onSaveWooConfig: (storeUrl: String, ck: String, cs: String, wpUser: String, wpPass: String) -> Unit,
     onCheckUpdate: () -> Unit,
     onDownloadUpdate: () -> Unit,
+    onCopyText: (label: String, text: String, toastMessage: String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var storeUrl by remember(cloud.wooStoreUrl) { mutableStateOf(cloud.wooStoreUrl) }
@@ -73,6 +85,11 @@ fun CloudSettingsDialog(
     var wpUser by remember(cloud.wooWpUser) { mutableStateOf(cloud.wooWpUser) }
     var wpAppPass by remember { mutableStateOf("") }
     var showRestoreConfirm by remember { mutableStateOf(false) }
+    var showOAuthGuide by remember { mutableStateOf(cloud.showOAuthSetupHint) }
+
+    LaunchedEffect(cloud.showOAuthSetupHint) {
+        if (cloud.showOAuthSetupHint) showOAuthGuide = true
+    }
 
     val formattedLastBackup = remember(cloud.lastBackupEpochMs) {
         if (cloud.lastBackupEpochMs > 0L) {
@@ -167,6 +184,7 @@ fun CloudSettingsDialog(
                                 if (cloud.googleEmail.isNullOrBlank()) {
                                     Button(
                                         onClick = onSignInGoogle,
+                                        enabled = !cloud.isSyncing,
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.testTag("google_signin_button")
                                     ) {
@@ -179,7 +197,47 @@ fun CloudSettingsDialog(
                                 }
                             }
 
-                            if (!cloud.lastBackupError.isNullOrBlank()) {
+                            // Inline feedback banners (visible directly inside the dialog, never hidden behind it!)
+                            if (!cloud.authErrorMessage.isNullOrBlank()) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, TerracottaBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ErrorOutline,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            text = cloud.authErrorMessage,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                }
+                            } else if (!cloud.authStatusMessage.isNullOrBlank()) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, SageBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = cloud.authStatusMessage,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                            } else if (!cloud.lastBackupError.isNullOrBlank()) {
                                 Text(
                                     text = "Last notice: ${cloud.lastBackupError}",
                                     style = MaterialTheme.typography.bodySmall,
@@ -231,6 +289,80 @@ fun CloudSettingsDialog(
                                 Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("Export Master Google Sheet")
+                            }
+
+                            // Expandable OAuth Diagnostics & Live Installed APK SHA-1 Copy Helper
+                            Surface(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { showOAuthGuide = !showOAuthGuide },
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.VpnKey,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "Google Sign-In Setup & App SHA-1",
+                                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = if (showOAuthGuide) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                            contentDescription = "Toggle OAuth setup info"
+                                        )
+                                    }
+
+                                    if (showOAuthGuide) {
+                                        Column(
+                                            modifier = Modifier.padding(top = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "Google requires an Android OAuth 2.0 Client ID in Google Cloud Console matching this exact package and signing SHA-1:",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            CopyableCodeRow(
+                                                label = "Package Name",
+                                                value = "in.potr.bonsai",
+                                                onCopy = {
+                                                    onCopyText("Package Name", "in.potr.bonsai", "Copied package in.potr.bonsai")
+                                                }
+                                            )
+                                            CopyableCodeRow(
+                                                label = "Installed APK SHA-1",
+                                                value = appSha1,
+                                                onCopy = {
+                                                    onCopyText("POTR Bonsai SHA-1", appSha1, "Copied installed APK SHA-1")
+                                                }
+                                            )
+                                            Text(
+                                                text = "1. Enable Drive API, Sheets API & YouTube Data API v3.\n" +
+                                                    "2. Configure OAuth Consent Screen (External → add your Gmail as a Test User).\n" +
+                                                    "3. Create OAuth Client ID (Android) with the package & SHA-1 above.\n" +
+                                                    "Tip: Set KEYSTORE_BASE64 in GitHub Secrets so this SHA-1 stays the same across updates.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -446,7 +578,7 @@ fun CloudSettingsDialog(
             onDismissRequest = { showRestoreConfirm = false },
             title = { Text("Restore from Google Drive?") },
             text = {
-                Text("This replaces your current on-device catalog, schedules, and timelines with the latest potr_bonsai_backup.json from Google Drive and re-downloads specimen photos.")
+                Text("This replaces your current on-device catalog, care actions, and timelines with the latest potr_bonsai_backup.json from Google Drive and re-downloads specimen photos.")
             },
             confirmButton = {
                 Button(
@@ -465,5 +597,51 @@ fun CloudSettingsDialog(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun CopyableCodeRow(
+    label: String,
+    value: String,
+    onCopy: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            IconButton(
+                onClick = onCopy,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = "Copy $label",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }

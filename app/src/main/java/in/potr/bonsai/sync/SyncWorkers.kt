@@ -54,10 +54,10 @@ class DriveBackupWorker(
 
     override suspend fun doWork(): Result {
         val app = applicationContext as? PotrBonsaiApp ?: return Result.failure()
-        return when (app.repository.performDriveBackupAndPhotoSync()) {
+        return when (app.repository.performDriveBackupAndPhotoSync(allowInteractive = false)) {
             is `in`.potr.bonsai.data.repository.CloudSyncOutcome.Success -> Result.success()
             is `in`.potr.bonsai.data.repository.CloudSyncOutcome.NotSignedIn -> Result.success()
-            is `in`.potr.bonsai.data.repository.CloudSyncOutcome.NeedsConsent -> Result.success()
+            is `in`.potr.bonsai.data.repository.CloudSyncOutcome.NeedsResolution -> Result.success()
             is `in`.potr.bonsai.data.repository.CloudSyncOutcome.Error -> {
                 if (runAttemptCount < 3) Result.retry() else Result.failure()
             }
@@ -72,10 +72,10 @@ class YouTubeUploadWorker(
 
     override suspend fun doWork(): Result {
         val app = applicationContext as? PotrBonsaiApp ?: return Result.failure()
-        return when (app.repository.processPendingYouTubeUploads()) {
+        return when (app.repository.processPendingYouTubeUploads(allowInteractive = false)) {
             is `in`.potr.bonsai.data.repository.CloudSyncOutcome.Success -> Result.success()
             is `in`.potr.bonsai.data.repository.CloudSyncOutcome.NotSignedIn -> Result.success()
-            is `in`.potr.bonsai.data.repository.CloudSyncOutcome.NeedsConsent -> Result.success()
+            is `in`.potr.bonsai.data.repository.CloudSyncOutcome.NeedsResolution -> Result.success()
             is `in`.potr.bonsai.data.repository.CloudSyncOutcome.Error -> {
                 if (runAttemptCount < 3) Result.retry() else Result.failure()
             }

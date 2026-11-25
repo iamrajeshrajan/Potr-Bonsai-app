@@ -1,6 +1,6 @@
 package `in`.potr.bonsai.ui
 
-import android.content.Intent
+import android.app.PendingIntent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -50,6 +50,9 @@ data class CloudSettingsState(
     val hasWpAppPassword: Boolean = false,
     val isSyncing: Boolean = false,
     val isCheckingUpdate: Boolean = false,
+    val authStatusMessage: String? = null,
+    val authErrorMessage: String? = null,
+    val showOAuthSetupHint: Boolean = false,
     val updateStatusMessage: String = "Installed: v${BuildConfig.VERSION_NAME}",
     val availableUpdateUrl: String? = null,
     val availableUpdateVersion: String? = null
@@ -91,7 +94,7 @@ data class MainUiState(
 
 sealed interface UiEvent {
     data class ShowMessage(val text: String) : UiEvent
-    data class LaunchConsentIntent(val intent: Intent) : UiEvent
+    data class LaunchAuthResolution(val pendingIntent: PendingIntent) : UiEvent
     data class InstallApk(val apkUrl: String) : UiEvent
 }
 
@@ -214,6 +217,9 @@ class MainViewModel(
         cloudState.value = fresh.copy(
             isSyncing = current.isSyncing,
             isCheckingUpdate = current.isCheckingUpdate,
+            authStatusMessage = current.authStatusMessage,
+            authErrorMessage = current.authErrorMessage,
+            showOAuthSetupHint = current.showOAuthSetupHint,
             updateStatusMessage = current.updateStatusMessage,
             availableUpdateUrl = current.availableUpdateUrl,
             availableUpdateVersion = current.availableUpdateVersion
@@ -358,25 +364,34 @@ class MainViewModel(
         }
     }
 
-    fun replaceSpecimenPhoto(specimen: SpecimenEntity, uri: Uri) {
+    fun replaceSpecimenPhotoById(specimenId: String, uri: Uri, tempFileToDelete: java.io.File? = null) {
         viewModelScope.launch {
             try {
+                val specimen = uiState.value.specimens.firstOrNull { it.specimen.id == specimenId }?.specimen
+                    ?: return@launch
                 val compressed = repository.compressPhotoFromUri(uri, specimen.code)
                 repository.updateSpecimenPhoto(specimen, compressed.file.absolutePath)
                 val kb = (compressed.sizeBytes / 1024).coerceAtLeast(1)
                 emitMessage("Photo compressed (${compressed.width}×${compressed.height}, ${kb} KB) & queued for Drive")
             } catch (e: Exception) {
                 emitMessage("Photo compression failed: ${e.message}")
+            } finally {
+                tempFileToDelete?.delete()
             }
         }
     }
 
-    suspend fun compressPickedPhoto(uri: Uri, code: String): Result<String> = runCatching {
-        val compressed = repository.compressPhotoFromUri(uri, code)
-        val kb = (compressed.sizeBytes / 1024).coerceAtLeast(1)
-        emitMessage("Compressed to ${compressed.width}×${compressed.height} (${kb} KB)")
-        compressed.file.absolutePath
-    }
+    suspend fun compressPickedPhoto(uri: Uri, code: String, tempFileToDelete: java.io.File? = null): Result<String> =
+        try {
+            runCatching {
+                val compressed = repository.compressPhotoFromUri(uri, code)
+                val kb = (compressed.sizeBytes / 1024).coerceAtLeast(1)
+                emitMessage("Compressed to ${compressed.width}×${compressed.height} (${kb} KB)")
+                compressed.file.absolutePath
+            }
+        } finally {
+            tempFileToDelete?.delete()
+        }
 
     suspend fun stagePickedVideo(uri: Uri, prefix: String): Result<String> = runCatching {
         repository.stageVideoFromUri(uri, prefix).absolutePath
@@ -497,23 +512,62 @@ class MainViewModel(
         }
     }
 
+    fun onGoogleSignInStarted() {
+        cloudState.update {
+            it.copy(
+                isSyncing = true,
+                authStatusMessage = "Connecting to Google…",
+                authErrorMessage = null
+            )
+        }
+    }
+
     fun onGoogleSignedIn(email: String) {
         repository.prefs.googleEmail = email
+        repository.prefs.lastBackupError = null
+        cloudState.update {
+            it.copy(
+                googleEmail = email,
+                authStatusMessage = "Signed in as $email — syncing Drive backup…",
+                authErrorMessage = null,
+                showOAuthSetupHint = false
+            )
+        }
         refreshCloudState()
-        emitMessage("Signed in as $email — syncing Drive folder & backup...")
+        emitMessage("Signed in as $email — syncing Drive backup…")
         backupNowToDrive()
+    }
+
+    fun onGoogleAuthFailed(message: String, isConfigError: Boolean = false) {
+        cloudState.update {
+            it.copy(
+                isSyncing = false,
+                authStatusMessage = null,
+                authErrorMessage = message,
+                showOAuthSetupHint = isConfigError || it.showOAuthSetupHint
+            )
+        }
+        emitMessage(message)
     }
 
     fun onGoogleSignedOut() {
         repository.prefs.clearGoogleSession()
+        cloudState.update {
+            it.copy(
+                isSyncing = false,
+                authStatusMessage = "Signed out of Google account",
+                authErrorMessage = null,
+                showOAuthSetupHint = false
+            )
+        }
         refreshCloudState()
         emitMessage("Signed out of Google account")
     }
 
     fun backupNowToDrive() {
         viewModelScope.launch {
-            cloudState.update { it.copy(isSyncing = true) }
-            val outcome = repository.performDriveBackupAndPhotoSync()
+            cloudState.update { it.copy(isSyncing = true, authErrorMessage = null) }
+            val outcome = repository.performDriveBackupAndPhotoSync(allowInteractive = true)
             cloudState.update { it.copy(isSyncing = false) }
             refreshCloudState()
             handleCloudOutcome(outcome)
@@ -522,7 +576,7 @@ class MainViewModel(
 
     fun restoreFromDrive() {
         viewModelScope.launch {
-            cloudState.update { it.copy(isSyncing = true) }
+            cloudState.update { it.copy(isSyncing = true, authErrorMessage = null) }
             val outcome = repository.restoreFromGoogleDrive()
             cloudState.update { it.copy(isSyncing = false) }
             refreshCloudState()
@@ -532,8 +586,8 @@ class MainViewModel(
 
     fun uploadPendingVideosToYouTube() {
         viewModelScope.launch {
-            cloudState.update { it.copy(isSyncing = true) }
-            val outcome = repository.processPendingYouTubeUploads()
+            cloudState.update { it.copy(isSyncing = true, authErrorMessage = null) }
+            val outcome = repository.processPendingYouTubeUploads(allowInteractive = true)
             cloudState.update { it.copy(isSyncing = false) }
             refreshCloudState()
             handleCloudOutcome(outcome)
@@ -542,7 +596,7 @@ class MainViewModel(
 
     fun exportToGoogleSheet() {
         viewModelScope.launch {
-            cloudState.update { it.copy(isSyncing = true) }
+            cloudState.update { it.copy(isSyncing = true, authErrorMessage = null) }
             val outcome = repository.exportToGoogleSheet()
             cloudState.update { it.copy(isSyncing = false) }
             refreshCloudState()
@@ -628,12 +682,34 @@ class MainViewModel(
 
     private fun handleCloudOutcome(outcome: CloudSyncOutcome) {
         when (outcome) {
-            is CloudSyncOutcome.Success -> emitMessage(outcome.message)
-            is CloudSyncOutcome.NotSignedIn -> emitMessage("Sign in with Google first in Cloud & potr.in")
-            is CloudSyncOutcome.NeedsConsent -> viewModelScope.launch {
-                _events.emit(UiEvent.LaunchConsentIntent(outcome.intent))
+            is CloudSyncOutcome.Success -> {
+                cloudState.update {
+                    it.copy(
+                        authStatusMessage = outcome.message,
+                        authErrorMessage = null,
+                        showOAuthSetupHint = false
+                    )
+                }
+                emitMessage(outcome.message)
             }
-            is CloudSyncOutcome.Error -> emitMessage(outcome.message)
+            is CloudSyncOutcome.NotSignedIn -> {
+                val msg = "Tap Sign In above to connect your Google Drive & YouTube account."
+                cloudState.update { it.copy(authErrorMessage = msg, authStatusMessage = null) }
+                emitMessage(msg)
+            }
+            is CloudSyncOutcome.NeedsResolution -> viewModelScope.launch {
+                _events.emit(UiEvent.LaunchAuthResolution(outcome.pendingIntent))
+            }
+            is CloudSyncOutcome.Error -> {
+                cloudState.update {
+                    it.copy(
+                        authStatusMessage = null,
+                        authErrorMessage = outcome.message,
+                        showOAuthSetupHint = outcome.isConfigError || it.showOAuthSetupHint
+                    )
+                }
+                emitMessage(outcome.message)
+            }
         }
     }
 

@@ -14,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -68,6 +69,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,7 +83,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.identity.Identity
 import `in`.potr.bonsai.cloud.GoogleAuthTokenProvider
 import `in`.potr.bonsai.data.model.ScheduledActionEntity
 import `in`.potr.bonsai.data.model.SpecimenEntity
@@ -114,41 +116,49 @@ class MainActivity : ComponentActivity() {
         MainViewModel.Factory(appInstance.repository, appInstance.updateChecker)
     }
 
-    // Active media pick targets
+    // Active media pick targets (persisted across Activity recreation when Camera app opens)
     private var pendingPhotoTargetCode: String = "BNS-NEW"
-    private var pendingPhotoSpecimenForReplace: SpecimenEntity? = null
-    private var pendingCameraTempFile: File? = null
-    private var pendingCameraTempUri: Uri? = null
+    private var pendingPhotoReplaceSpecimenId: String? = null
+    private var pendingCameraTempPath: String? = null
     private var stagedAddEditPhotoPath = mutableStateOf<String?>(null)
 
     private var pendingVideoSlot: String = "before" // "before" | "after"
     private var stagedBeforeVideoPath = mutableStateOf<String?>(null)
     private var stagedAfterVideoPath = mutableStateOf<String?>(null)
 
-    private val googleSignInLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        try {
-            val account = task.result
-            val email = account?.email
-            if (!email.isNullOrBlank()) {
-                viewModel.onGoogleSignedIn(email)
-            } else {
-                viewModel.emitMessage("Google Sign-In canceled")
-            }
-        } catch (_: Exception) {
-            viewModel.emitMessage("Google Sign-In requires SHA-1 fingerprint registered in Google Cloud Console")
+    private val googleAuthResolutionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { activityResult ->
+        if (activityResult.resultCode == RESULT_CANCELED) {
+            viewModel.onGoogleAuthFailed("Google Sign-In was canceled.", isConfigError = false)
+            return@registerForActivityResult
         }
-    }
-
-    private val consentRecoveryLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            viewModel.backupNowToDrive()
-        } else {
-            viewModel.emitMessage("Google Drive/YouTube permission was not granted")
+        try {
+            val authResult = Identity.getAuthorizationClient(this)
+                .getAuthorizationResultFromIntent(activityResult.data)
+            val token = authResult.accessToken
+            if (token.isNullOrBlank()) {
+                viewModel.onGoogleAuthFailed(
+                    "Google did not grant an access token. Please try Sign In again.",
+                    isConfigError = false
+                )
+            } else {
+                lifecycleScope.launch {
+                    val email = GoogleAuthTokenProvider.fetchUserEmail(token) ?: "Google Account"
+                    viewModel.onGoogleSignedIn(email)
+                }
+            }
+        } catch (e: Exception) {
+            val apiEx = GoogleAuthTokenProvider.findApiException(e)
+            if (apiEx != null) {
+                val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(apiEx)
+                viewModel.onGoogleAuthFailed(msg, isConfig)
+            } else {
+                viewModel.onGoogleAuthFailed(
+                    e.localizedMessage ?: "Google Sign-In failed.",
+                    isConfigError = true
+                )
+            }
         }
     }
 
@@ -157,7 +167,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            handlePickedPhotoUri(uri)
+            handlePickedPhotoUri(uri, tempFileToDelete = null)
         }
     }
 
@@ -165,9 +175,17 @@ class MainActivity : ComponentActivity() {
     private val takePictureLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { success ->
-        val uri = pendingCameraTempUri
-        if (success && uri != null) {
-            handlePickedPhotoUri(uri)
+        val tempPath = pendingCameraTempPath
+        pendingCameraTempPath = null
+        val tempFile = tempPath?.let { File(it) }
+        if (success && tempFile != null && tempFile.exists() && tempFile.length() > 0L) {
+            val uri = PhotoCompressor.uriForFile(this, tempFile)
+            handlePickedPhotoUri(uri, tempFileToDelete = tempFile)
+        } else {
+            tempFile?.delete()
+            if (success) {
+                viewModel.emitMessage("Camera photo was empty — please try again")
+            }
         }
     }
 
@@ -208,6 +226,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState != null) {
+            pendingPhotoTargetCode = savedInstanceState.getString(STATE_PHOTO_CODE, "BNS-NEW")
+            pendingPhotoReplaceSpecimenId = savedInstanceState.getString(STATE_REPLACE_ID)
+            pendingCameraTempPath = savedInstanceState.getString(STATE_CAMERA_TEMP_PATH)
+            stagedAddEditPhotoPath.value = savedInstanceState.getString(STATE_STAGED_PHOTO_PATH)
+        }
         enableEdgeToEdge()
 
         setContent {
@@ -217,6 +241,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_PHOTO_CODE, pendingPhotoTargetCode)
+        outState.putString(STATE_REPLACE_ID, pendingPhotoReplaceSpecimenId)
+        outState.putString(STATE_CAMERA_TEMP_PATH, pendingCameraTempPath)
+        outState.putString(STATE_STAGED_PHOTO_PATH, stagedAddEditPhotoPath.value)
+    }
+
     @Composable
     private fun PotrBonsaiRoot() {
         val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -224,10 +256,14 @@ class MainActivity : ComponentActivity() {
         val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
         val scope = rememberCoroutineScope()
 
-        var showCloudDialog by remember { mutableStateOf(false) }
-        var showAddEditDialog by remember { mutableStateOf(false) }
-        var editingSpecimen by remember { mutableStateOf<SpecimenEntity?>(null) }
+        var showCloudDialog by rememberSaveable { mutableStateOf(false) }
+        var showAddEditDialog by rememberSaveable { mutableStateOf(false) }
+        var editingSpecimenId by rememberSaveable { mutableStateOf<String?>(null) }
         var activeActionModal by remember { mutableStateOf<Pair<SpecimenEntity, ScheduledActionEntity>?>(null) }
+
+        val editingSpecimen = remember(editingSpecimenId, state.specimens) {
+            editingSpecimenId?.let { id -> state.specimens.firstOrNull { it.specimen.id == id }?.specimen }
+        }
 
         val stagedPhoto by stagedAddEditPhotoPath
         val beforeVideo by stagedBeforeVideoPath
@@ -245,7 +281,10 @@ class MainActivity : ComponentActivity() {
             viewModel.events.collect { event ->
                 when (event) {
                     is UiEvent.ShowMessage -> snackbarHostState.showSnackbar(event.text)
-                    is UiEvent.LaunchConsentIntent -> consentRecoveryLauncher.launch(event.intent)
+                    is UiEvent.LaunchAuthResolution -> {
+                        val req = IntentSenderRequest.Builder(event.pendingIntent.intentSender).build()
+                        googleAuthResolutionLauncher.launch(req)
+                    }
                     is UiEvent.InstallApk -> downloadAndInstallUpdate(event.apkUrl)
                 }
             }
@@ -290,19 +329,19 @@ class MainActivity : ComponentActivity() {
                             careActions = state.careActions,
                             onBack = { viewModel.closeSpecimenDetail() },
                             onEditSpecimen = {
-                                editingSpecimen = selectedDetail.specimen
+                                editingSpecimenId = selectedDetail.specimen.id
                                 stagedAddEditPhotoPath.value = null
                                 showAddEditDialog = true
                             },
                             onTogglePublish = { viewModel.togglePublish(selectedDetail) },
                             onDeleteSpecimen = { viewModel.deleteSpecimen(selectedDetail.specimen) },
                             onCapturePhoto = {
-                                pendingPhotoSpecimenForReplace = selectedDetail.specimen
+                                pendingPhotoReplaceSpecimenId = selectedDetail.specimen.id
                                 pendingPhotoTargetCode = selectedDetail.specimen.code
                                 requestCameraCapture()
                             },
                             onPickPhoto = {
-                                pendingPhotoSpecimenForReplace = selectedDetail.specimen
+                                pendingPhotoReplaceSpecimenId = selectedDetail.specimen.id
                                 pendingPhotoTargetCode = selectedDetail.specimen.code
                                 imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             },
@@ -365,7 +404,7 @@ class MainActivity : ComponentActivity() {
                                 if (state.activeTab == MainTab.CATALOG || state.activeTab == MainTab.SHOWCASE) {
                                     ExtendedFloatingActionButton(
                                         onClick = {
-                                            editingSpecimen = null
+                                            editingSpecimenId = null
                                             stagedAddEditPhotoPath.value = null
                                             showAddEditDialog = true
                                         },
@@ -436,19 +475,19 @@ class MainActivity : ComponentActivity() {
                         careActions = state.careActions,
                         stagedPhotoPath = stagedPhoto,
                         onRequestCameraPhoto = { code ->
-                            pendingPhotoSpecimenForReplace = null
+                            pendingPhotoReplaceSpecimenId = null
                             pendingPhotoTargetCode = code
                             requestCameraCapture()
                         },
                         onRequestGalleryPhoto = { code ->
-                            pendingPhotoSpecimenForReplace = null
+                            pendingPhotoReplaceSpecimenId = null
                             pendingPhotoTargetCode = code
                             imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         },
                         onClearPhoto = { stagedAddEditPhotoPath.value = null },
                         onDismiss = {
                             showAddEditDialog = false
-                            editingSpecimen = null
+                            editingSpecimenId = null
                             stagedAddEditPhotoPath.value = null
                         },
                         onSaveNew = { code, name, species, sub, age, ageType, ageNote, pot, potMeta, photo, p, potP, eff, sell, initTitle, initDays ->
@@ -463,7 +502,7 @@ class MainActivity : ComponentActivity() {
                                 existing, code, name, species, sub, age, ageType, ageNote, pot, potMeta, repotted, photo, p, potP, eff, sell
                             )
                             showAddEditDialog = false
-                            editingSpecimen = null
+                            editingSpecimenId = null
                             stagedAddEditPhotoPath.value = null
                         }
                     )
@@ -508,9 +547,11 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (showCloudDialog) {
+                    val installedSha1 = remember { GoogleAuthTokenProvider.getInstalledAppSha1(this@MainActivity) }
                     CloudSettingsDialog(
                         cloud = state.cloud,
                         pendingVideoCount = state.pendingVideoUploads,
+                        appSha1 = installedSha1,
                         onSignInGoogle = { startGoogleSignIn() },
                         onSignOutGoogle = { signOutGoogle() },
                         onBackupNow = { viewModel.backupNowToDrive() },
@@ -523,6 +564,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onCheckUpdate = { viewModel.checkForAppUpdate() },
                         onDownloadUpdate = { viewModel.requestDownloadUpdate() },
+                        onCopyText = { label, text, msg -> copyToClipboard(label, text, msg) },
                         onDismiss = { showCloudDialog = false }
                     )
                 }
@@ -543,40 +585,78 @@ class MainActivity : ComponentActivity() {
     private fun launchCameraInternal() {
         try {
             val (file, uri) = PhotoCompressor.createTempCameraUri(this)
-            pendingCameraTempFile = file
-            pendingCameraTempUri = uri
+            pendingCameraTempPath = file.absolutePath
             takePictureLauncher.launch(uri)
         } catch (e: Exception) {
             viewModel.emitMessage("Camera unavailable: ${e.message}")
         }
     }
 
-    private fun handlePickedPhotoUri(uri: Uri) {
-        val replaceTarget = pendingPhotoSpecimenForReplace
-        if (replaceTarget != null) {
-            viewModel.replaceSpecimenPhoto(replaceTarget, uri)
-            pendingPhotoSpecimenForReplace = null
+    private fun handlePickedPhotoUri(uri: Uri, tempFileToDelete: File?) {
+        val replaceId = pendingPhotoReplaceSpecimenId
+        if (!replaceId.isNullOrBlank()) {
+            pendingPhotoReplaceSpecimenId = null
+            viewModel.replaceSpecimenPhotoById(replaceId, uri, tempFileToDelete)
         } else {
+            val code = pendingPhotoTargetCode
             lifecycleScope.launch {
-                val res = viewModel.compressPickedPhoto(uri, pendingPhotoTargetCode)
+                val res = viewModel.compressPickedPhoto(uri, code, tempFileToDelete)
                 res.fold(
                     onSuccess = { path -> stagedAddEditPhotoPath.value = path },
                     onFailure = { e -> viewModel.emitMessage("Photo compression error: ${e.message}") }
                 )
             }
         }
-        pendingCameraTempFile?.delete()
-        pendingCameraTempFile = null
     }
 
     private fun startGoogleSignIn() {
-        val client = GoogleSignIn.getClient(this, GoogleAuthTokenProvider.buildSignInOptions())
-        googleSignInLauncher.launch(client.signInIntent)
+        viewModel.onGoogleSignInStarted()
+        val request = GoogleAuthTokenProvider.buildAuthorizationRequest()
+        Identity.getAuthorizationClient(this)
+            .authorize(request)
+            .addOnSuccessListener { authorizationResult ->
+                if (authorizationResult.hasResolution()) {
+                    val pendingIntent = authorizationResult.pendingIntent
+                    if (pendingIntent != null) {
+                        val intentSenderReq = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                        googleAuthResolutionLauncher.launch(intentSenderReq)
+                    } else {
+                        viewModel.onGoogleAuthFailed(
+                            "Google authorization could not open consent screen.",
+                            isConfigError = true
+                        )
+                    }
+                } else {
+                    val token = authorizationResult.accessToken
+                    if (token.isNullOrBlank()) {
+                        viewModel.onGoogleAuthFailed(
+                            "Google returned an empty access token. Please try again.",
+                            isConfigError = false
+                        )
+                    } else {
+                        lifecycleScope.launch {
+                            val email = GoogleAuthTokenProvider.fetchUserEmail(token) ?: "Google Account"
+                            viewModel.onGoogleSignedIn(email)
+                        }
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                val apiEx = GoogleAuthTokenProvider.findApiException(e)
+                if (apiEx != null) {
+                    val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(apiEx)
+                    viewModel.onGoogleAuthFailed(msg, isConfig)
+                } else {
+                    viewModel.onGoogleAuthFailed(
+                        e.localizedMessage ?: "Google Sign-In failed to start.",
+                        isConfigError = true
+                    )
+                }
+            }
     }
 
     private fun signOutGoogle() {
-        val client = GoogleSignIn.getClient(this, GoogleAuthTokenProvider.buildSignInOptions())
-        client.signOut().addOnCompleteListener {
+        Identity.getSignInClient(this).signOut().addOnCompleteListener {
             viewModel.onGoogleSignedOut()
         }
     }
@@ -639,6 +719,13 @@ class MainActivity : ComponentActivity() {
                 viewModel.emitMessage("Update download failed: ${e.message}")
             }
         }
+    }
+
+    companion object {
+        private const val STATE_PHOTO_CODE = "pending_photo_code"
+        private const val STATE_REPLACE_ID = "pending_photo_replace_id"
+        private const val STATE_CAMERA_TEMP_PATH = "pending_camera_temp_path"
+        private const val STATE_STAGED_PHOTO_PATH = "staged_add_edit_photo_path"
     }
 }
 

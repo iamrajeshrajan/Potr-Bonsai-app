@@ -29,9 +29,12 @@ object PhotoCompressor {
     fun createTempCameraUri(context: Context): Pair<File, Uri> {
         val dir = File(context.cacheDir, "captures").apply { mkdirs() }
         val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val uri = uriForFile(context, file)
         return file to uri
     }
+
+    fun uriForFile(context: Context, file: File): Uri =
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 
     fun stageVideoFromUri(context: Context, sourceUri: Uri, prefix: String): File {
         val outDir = File(context.filesDir, "videos").apply { mkdirs() }
@@ -70,16 +73,18 @@ object PhotoCompressor {
             BitmapFactory.decodeStream(input, null, decodeOptions)
         } ?: throw IllegalStateException("Could not decode image from selected photo")
 
-        // 3. Respect EXIF orientation
-        val rotationDegrees = context.contentResolver.openInputStream(sourceUri)?.use { input ->
-            val exif = ExifInterface(input)
-            when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-                ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-                ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-                else -> 0f
-            }
-        } ?: 0f
+        // 3. Respect EXIF orientation (fault-tolerant for OEM camera headers)
+        val rotationDegrees = runCatching {
+            context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                val exif = ExifInterface(input)
+                when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                    ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                    ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                    else -> 0f
+                }
+            } ?: 0f
+        }.getOrDefault(0f)
 
         val orientedBitmap = if (rotationDegrees != 0f) {
             val matrix = Matrix().apply { postRotate(rotationDegrees) }

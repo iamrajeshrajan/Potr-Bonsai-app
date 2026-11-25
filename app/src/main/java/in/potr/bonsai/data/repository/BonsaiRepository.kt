@@ -1,7 +1,7 @@
 package `in`.potr.bonsai.data.repository
 
+import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import `in`.potr.bonsai.BuildConfig
 import `in`.potr.bonsai.cloud.AuthTokenResult
@@ -36,8 +36,8 @@ import java.util.UUID
 sealed interface CloudSyncOutcome {
     data class Success(val message: String) : CloudSyncOutcome
     data object NotSignedIn : CloudSyncOutcome
-    data class NeedsConsent(val intent: Intent) : CloudSyncOutcome
-    data class Error(val message: String) : CloudSyncOutcome
+    data class NeedsResolution(val pendingIntent: PendingIntent) : CloudSyncOutcome
+    data class Error(val message: String, val isConfigError: Boolean = false) : CloudSyncOutcome
 }
 
 class BonsaiRepository(
@@ -400,11 +400,19 @@ class BonsaiRepository(
      * Ensures Drive folders exist, uploads any unsynced local compressed photos to Drive/Photos,
      * and writes/patches `potr_bonsai_backup.json` in `Bonsai Catalogue/`.
      */
-    suspend fun performDriveBackupAndPhotoSync(): CloudSyncOutcome = withContext(Dispatchers.IO) {
-        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context)) {
+    suspend fun performDriveBackupAndPhotoSync(allowInteractive: Boolean = false): CloudSyncOutcome = withContext(Dispatchers.IO) {
+        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context, prefs.googleEmail, allowInteractive)) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
-            is AuthTokenResult.NeedsConsent -> return@withContext CloudSyncOutcome.NeedsConsent(auth.recoveryIntent)
-            is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message)
+            is AuthTokenResult.NeedsResolution -> {
+                if (!allowInteractive) {
+                    prefs.lastBackupError = "Google authorization expired — open Cloud settings and tap Sign In."
+                }
+                return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
+            }
+            is AuthTokenResult.Error -> {
+                prefs.lastBackupError = auth.message
+                return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
+            }
             is AuthTokenResult.Success -> {
                 try {
                     prefs.googleEmail = auth.email
@@ -478,10 +486,10 @@ class BonsaiRepository(
      * and re-downloads specimen photos from Drive if missing on this device.
      */
     suspend fun restoreFromGoogleDrive(): CloudSyncOutcome = withContext(Dispatchers.IO) {
-        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context)) {
+        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context, prefs.googleEmail, allowInteractiveResolution = true)) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
-            is AuthTokenResult.NeedsConsent -> return@withContext CloudSyncOutcome.NeedsConsent(auth.recoveryIntent)
-            is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message)
+            is AuthTokenResult.NeedsResolution -> return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
+            is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
             is AuthTokenResult.Success -> {
                 try {
                     val rootFolderId = prefs.driveFolderId?.takeIf { it.isNotBlank() }
@@ -543,16 +551,16 @@ class BonsaiRepository(
      * Streams any queued/failed Before & After timeline videos to YouTube via resumable upload,
      * saves the returned `youtu.be` links into Room, cleans up local temp files, and refreshes Drive backup.
      */
-    suspend fun processPendingYouTubeUploads(): CloudSyncOutcome = withContext(Dispatchers.IO) {
+    suspend fun processPendingYouTubeUploads(allowInteractive: Boolean = false): CloudSyncOutcome = withContext(Dispatchers.IO) {
         val pending = dao.getPendingVideoEntries()
         if (pending.isEmpty()) {
             return@withContext CloudSyncOutcome.Success("No pending videos to upload")
         }
 
-        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context)) {
+        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context, prefs.googleEmail, allowInteractive)) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
-            is AuthTokenResult.NeedsConsent -> return@withContext CloudSyncOutcome.NeedsConsent(auth.recoveryIntent)
-            is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message)
+            is AuthTokenResult.NeedsResolution -> return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
+            is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
             is AuthTokenResult.Success -> {
                 var uploadedCount = 0
                 var failedCount = 0
@@ -666,10 +674,10 @@ class BonsaiRepository(
      * Exports the current catalog to the Master Google Sheet.
      */
     suspend fun exportToGoogleSheet(): CloudSyncOutcome = withContext(Dispatchers.IO) {
-        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context)) {
+        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context, prefs.googleEmail, allowInteractiveResolution = true)) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
-            is AuthTokenResult.NeedsConsent -> return@withContext CloudSyncOutcome.NeedsConsent(auth.recoveryIntent)
-            is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message)
+            is AuthTokenResult.NeedsResolution -> return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
+            is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
             is AuthTokenResult.Success -> {
                 try {
                     val specimens = specimensFlow.first()
