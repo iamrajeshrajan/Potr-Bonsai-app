@@ -31,48 +31,70 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Decode Persistent Signing Keystore (Prevents SHA-1 Drift & Update Conflicts)
+      - name: Decode Persistent Signing Keystore (Guarantees Fixed SHA-1 Across Every Build)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          SECRET_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SECRET_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 --decode > "${GITHUB_WORKSPACE}/app/release-keystore.jks"
             echo "KEYSTORE_FILE=${GITHUB_WORKSPACE}/app/release-keystore.jks" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=${SECRET_KEYSTORE_PASSWORD}" >> $GITHUB_ENV
+            echo "KEY_ALIAS=${SECRET_KEY_ALIAS}" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=${SECRET_KEY_PASSWORD}" >> $GITHUB_ENV
+            echo "USING_CUSTOM_KEYSTORE=true" >> $GITHUB_ENV
             echo "Decoded custom release keystore from GitHub Secrets."
-          elif [ -f "${GITHUB_WORKSPACE}/debug.keystore.base64" ]; then
-            mkdir -p "${HOME}/.android"
-            if base64 --decode "${GITHUB_WORKSPACE}/debug.keystore.base64" > "${HOME}/.android/debug.keystore" \
-              && keytool -list -keystore "${HOME}/.android/debug.keystore" -storepass android >/dev/null 2>&1; then
-              echo "Decoded persistent debug.keystore.base64 into ~/.android/debug.keystore (consistent SHA-1 across all builds)."
-            else
-              rm -f "${HOME}/.android/debug.keystore"
-              echo "Warning: debug.keystore.base64 could not be verified; falling back to default Android debug keystore."
-            fi
           else
-            echo "No keystore found; using automatic Android signing."
+            B64_SRC=""
+            if [ -f "${GITHUB_WORKSPACE}/.github/signing/potr-studio-debug.b64" ]; then
+              B64_SRC="${GITHUB_WORKSPACE}/.github/signing/potr-studio-debug.b64"
+            elif [ -f "${GITHUB_WORKSPACE}/debug.keystore.base64" ]; then
+              B64_SRC="${GITHUB_WORKSPACE}/debug.keystore.base64"
+            fi
+            if [ -z "$B64_SRC" ]; then
+              echo "::error::Persistent keystore file missing! Refusing to sign with an ephemeral random SHA-1."
+              exit 1
+            fi
+            mkdir -p "${HOME}/.android"
+            tr -d '\r\n ' < "$B64_SRC" | base64 --decode > "${GITHUB_WORKSPACE}/app/studio-signing.keystore"
+            cp "${GITHUB_WORKSPACE}/app/studio-signing.keystore" "${HOME}/.android/debug.keystore"
+            keytool -list -keystore "${GITHUB_WORKSPACE}/app/studio-signing.keystore" -storepass android -alias androiddebugkey
+            echo "KEYSTORE_FILE=${GITHUB_WORKSPACE}/app/studio-signing.keystore" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=android" >> $GITHUB_ENV
+            echo "KEY_ALIAS=androiddebugkey" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+            echo "USING_CUSTOM_KEYSTORE=false" >> $GITHUB_ENV
+            echo "Configured persistent studio keystore from ${B64_SRC} (permanent SHA-1 locked)."
           fi
 
       - name: Run Unit Tests & Build Debug/Release APKs
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           gradle :app:testDebugUnitTest assembleDebug assembleRelease --no-daemon --stacktrace
 
-      - name: Print APK Signing SHA-1 Fingerprint (Register Once in Google Cloud Console)
+      - name: Verify APK Signing SHA-1 Fingerprint (Locked Against Drift)
         run: |
           echo "=================================================================="
           echo "APK SIGNING CERTIFICATE SHA-1 FINGERPRINT (For Google OAuth Setup)"
           echo "=================================================================="
-          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk || true
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name apksigner | sort -V | tail -n 1)
+          CERT_OUT=$("$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk)
+          echo "$CERT_OUT"
           echo "=================================================================="
+          if [ "${USING_CUSTOM_KEYSTORE}" != "true" ]; then
+            if ! echo "$CERT_OUT" | grep -iq "5c54ee81039a43f798229d55f58cdabef8ceb180"; then
+              echo "::error::APK was NOT signed with the expected permanent studio SHA-1 (5C:54:EE:81:...)! Aborting release."
+              exit 1
+            fi
+            echo "Verified permanent SHA-1: 5C:54:EE:81:03:9A:43:F7:98:22:9D:55:F5:8C:DA:BE:F8:CE:B1:80"
+          fi
 
       - name: Prepare Release Metadata & Rename APKs
         run: |
           mkdir -p dist
           APP_VER=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
-          APP_VER=${APP_VER:-2.1.2}
+          APP_VER=${APP_VER:-2.1.3}
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             RELEASE_TAG="${GITHUB_REF_NAME}"
           else

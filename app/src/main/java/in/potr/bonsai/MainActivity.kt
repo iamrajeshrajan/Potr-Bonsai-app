@@ -146,13 +146,17 @@ class MainActivity : ComponentActivity() {
     private val googleAuthResolutionLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { activityResult ->
-        if (activityResult.resultCode == RESULT_CANCELED) {
-            viewModel.onGoogleAuthFailed("Google Sign-In was canceled.", isConfigError = false)
+        val data = activityResult.data
+        if (data == null && activityResult.resultCode == RESULT_CANCELED) {
+            viewModel.onGoogleAuthFailed(
+                "Google Sign-In closed without authorizing. If you didn't cancel, verify this APK's SHA-1 below matches your Google Cloud Android OAuth Client ID and your Gmail is added as a Test User.",
+                isConfigError = true
+            )
             return@registerForActivityResult
         }
         try {
             val authResult = Identity.getAuthorizationClient(this)
-                .getAuthorizationResultFromIntent(activityResult.data)
+                .getAuthorizationResultFromIntent(data)
             val token = authResult.accessToken
             if (token.isNullOrBlank()) {
                 viewModel.onGoogleAuthFailed(
@@ -170,6 +174,11 @@ class MainActivity : ComponentActivity() {
             if (apiEx != null) {
                 val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(apiEx)
                 viewModel.onGoogleAuthFailed(msg, isConfig)
+            } else if (activityResult.resultCode == RESULT_CANCELED) {
+                viewModel.onGoogleAuthFailed(
+                    "Google Sign-In closed without authorizing. If you didn't cancel, verify this APK's SHA-1 below matches your Google Cloud Android OAuth Client ID and your Gmail is added as a Test User.",
+                    isConfigError = true
+                )
             } else {
                 viewModel.onGoogleAuthFailed(
                     e.localizedMessage ?: "Google Sign-In failed.",

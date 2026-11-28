@@ -356,7 +356,7 @@ fun CloudSettingsDialog(
                                                 text = "1. Enable Drive API, Sheets API & YouTube Data API v3.\n" +
                                                     "2. Configure OAuth Consent Screen (External → add your Gmail as a Test User).\n" +
                                                     "3. Create OAuth Client ID (Android) with the package & SHA-1 above.\n" +
-                                                    "Tip: Set KEYSTORE_BASE64 in GitHub Secrets so this SHA-1 stays the same across updates.",
+                                                    "Note: From v2.1.3 onward, GitHub Actions locks every build to this permanent SHA-1 so you only register it once.",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
