@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.EventNote
@@ -31,6 +32,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
@@ -38,6 +40,7 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,9 +63,11 @@ fun PotrNavigationDrawerSheet(
     onOpenAdminCareActions: () -> Unit,
     onOpenCloudSettings: () -> Unit,
     onCheckForUpdate: () -> Unit,
-    onDownloadAndInstallUpdate: () -> Unit
+    onDownloadAndInstallUpdate: () -> Unit,
+    onOpenReleasesPage: () -> Unit
 ) {
     val hasUpdate = !state.cloud.availableUpdateUrl.isNullOrBlank()
+    val isDownloading = state.cloud.isDownloadingUpdate
     val isSignedIn = !state.cloud.googleEmail.isNullOrBlank()
 
     ModalDrawerSheet(
@@ -296,9 +301,25 @@ fun PotrNavigationDrawerSheet(
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    if (hasUpdate) {
+                    if (isDownloading) {
+                        val pct = state.cloud.updateDownloadPercent
+                        if (pct in 1..99) {
+                            LinearProgressIndicator(
+                                progress = { pct / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                        Text(
+                            text = if (pct > 0) "Downloading… $pct%" else "Starting download…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else if (hasUpdate) {
                         Button(
                             onClick = onDownloadAndInstallUpdate,
+                            enabled = !isDownloading,
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
@@ -342,6 +363,21 @@ fun PotrNavigationDrawerSheet(
                                 Text("Check for App Update")
                             }
                         }
+                    }
+
+                    TextButton(
+                        onClick = onOpenReleasesPage,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("drawer_open_releases_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Open GitHub Releases")
                     }
                 }
             }

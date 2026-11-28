@@ -50,12 +50,15 @@ data class CloudSettingsState(
     val hasWpAppPassword: Boolean = false,
     val isSyncing: Boolean = false,
     val isCheckingUpdate: Boolean = false,
+    val isDownloadingUpdate: Boolean = false,
+    val updateDownloadPercent: Int = 0,
     val authStatusMessage: String? = null,
     val authErrorMessage: String? = null,
     val showOAuthSetupHint: Boolean = false,
     val updateStatusMessage: String = "Installed: v${BuildConfig.VERSION_NAME}",
     val availableUpdateUrl: String? = null,
-    val availableUpdateVersion: String? = null
+    val availableUpdateVersion: String? = null,
+    val releasePageUrl: String = "https://github.com/iamrajeshrajan/Potr-Bonsai-app/releases/latest"
 )
 
 data class MainUiState(
@@ -217,12 +220,15 @@ class MainViewModel(
         cloudState.value = fresh.copy(
             isSyncing = current.isSyncing,
             isCheckingUpdate = current.isCheckingUpdate,
+            isDownloadingUpdate = current.isDownloadingUpdate,
+            updateDownloadPercent = current.updateDownloadPercent,
             authStatusMessage = current.authStatusMessage,
             authErrorMessage = current.authErrorMessage,
             showOAuthSetupHint = current.showOAuthSetupHint,
             updateStatusMessage = current.updateStatusMessage,
             availableUpdateUrl = current.availableUpdateUrl,
-            availableUpdateVersion = current.availableUpdateVersion
+            availableUpdateVersion = current.availableUpdateVersion,
+            releasePageUrl = current.releasePageUrl
         )
     }
 
@@ -641,23 +647,39 @@ class MainViewModel(
             }
             result.fold(
                 onSuccess = { info ->
-                    if (info.updateAvailable && !info.downloadUrl.isNullOrBlank()) {
-                        cloudState.update {
-                            it.copy(
-                                isCheckingUpdate = false,
-                                updateStatusMessage = "v${info.latestVersion} available (installed: v${info.currentVersion})",
-                                availableUpdateUrl = info.downloadUrl,
-                                availableUpdateVersion = info.latestVersion
-                            )
+                    when {
+                        info.updateAvailable && !info.downloadUrl.isNullOrBlank() -> {
+                            cloudState.update {
+                                it.copy(
+                                    isCheckingUpdate = false,
+                                    updateStatusMessage = "v${info.latestVersion} available (installed: v${info.currentVersion})",
+                                    availableUpdateUrl = info.downloadUrl,
+                                    availableUpdateVersion = info.latestVersion,
+                                    releasePageUrl = info.releasePageUrl
+                                )
+                            }
                         }
-                    } else {
-                        cloudState.update {
-                            it.copy(
-                                isCheckingUpdate = false,
-                                updateStatusMessage = "Up to date (v${info.currentVersion})",
-                                availableUpdateUrl = null,
-                                availableUpdateVersion = null
-                            )
+                        info.updateAvailable -> {
+                            cloudState.update {
+                                it.copy(
+                                    isCheckingUpdate = false,
+                                    updateStatusMessage = "v${info.latestVersion} found, but APK asset is not attached yet — retry shortly or open Releases",
+                                    availableUpdateUrl = null,
+                                    availableUpdateVersion = info.latestVersion,
+                                    releasePageUrl = info.releasePageUrl
+                                )
+                            }
+                        }
+                        else -> {
+                            cloudState.update {
+                                it.copy(
+                                    isCheckingUpdate = false,
+                                    updateStatusMessage = "Up to date (v${info.currentVersion})",
+                                    availableUpdateUrl = null,
+                                    availableUpdateVersion = null,
+                                    releasePageUrl = info.releasePageUrl
+                                )
+                            }
                         }
                     }
                 },
@@ -665,7 +687,8 @@ class MainViewModel(
                     cloudState.update {
                         it.copy(
                             isCheckingUpdate = false,
-                            updateStatusMessage = "Update check failed: ${e.message}"
+                            updateStatusMessage = "Update check failed: ${e.message}",
+                            releasePageUrl = updateChecker.releasesPageUrl()
                         )
                     }
                 }
@@ -673,7 +696,18 @@ class MainViewModel(
         }
     }
 
+    fun setUpdateDownloadProgress(downloading: Boolean, percent: Int, statusMessage: String? = null) {
+        cloudState.update {
+            it.copy(
+                isDownloadingUpdate = downloading,
+                updateDownloadPercent = percent.coerceIn(0, 100),
+                updateStatusMessage = statusMessage ?: it.updateStatusMessage
+            )
+        }
+    }
+
     fun requestDownloadUpdate() {
+        if (cloudState.value.isDownloadingUpdate) return
         val url = cloudState.value.availableUpdateUrl ?: return
         viewModelScope.launch {
             _events.emit(UiEvent.InstallApk(url))

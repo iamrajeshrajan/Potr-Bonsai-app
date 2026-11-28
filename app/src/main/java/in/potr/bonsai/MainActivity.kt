@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Park
 import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DrawerValue
@@ -52,6 +53,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
@@ -62,6 +64,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -125,6 +128,20 @@ class MainActivity : ComponentActivity() {
     private var pendingVideoSlot: String = "before" // "before" | "after"
     private var stagedBeforeVideoPath = mutableStateOf<String?>(null)
     private var stagedAfterVideoPath = mutableStateOf<String?>(null)
+    private var pendingInstallApkUrl: String? = null
+
+    private val unknownAppSourcesLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val pendingUrl = pendingInstallApkUrl
+        pendingInstallApkUrl = null
+        val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()
+        if (allowed && !pendingUrl.isNullOrBlank()) {
+            downloadAndInstallUpdate(pendingUrl)
+        } else if (!allowed) {
+            viewModel.emitMessage("Enable 'Allow from this source' for POTR Bonsai to install updates")
+        }
+    }
 
     private val googleAuthResolutionLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
@@ -231,6 +248,7 @@ class MainActivity : ComponentActivity() {
             pendingPhotoReplaceSpecimenId = savedInstanceState.getString(STATE_REPLACE_ID)
             pendingCameraTempPath = savedInstanceState.getString(STATE_CAMERA_TEMP_PATH)
             stagedAddEditPhotoPath.value = savedInstanceState.getString(STATE_STAGED_PHOTO_PATH)
+            pendingInstallApkUrl = savedInstanceState.getString(STATE_PENDING_INSTALL_URL)
         }
         enableEdgeToEdge()
 
@@ -247,6 +265,7 @@ class MainActivity : ComponentActivity() {
         outState.putString(STATE_REPLACE_ID, pendingPhotoReplaceSpecimenId)
         outState.putString(STATE_CAMERA_TEMP_PATH, pendingCameraTempPath)
         outState.putString(STATE_STAGED_PHOTO_PATH, stagedAddEditPhotoPath.value)
+        outState.putString(STATE_PENDING_INSTALL_URL, pendingInstallApkUrl)
     }
 
     @Composable
@@ -317,6 +336,10 @@ class MainActivity : ComponentActivity() {
                     onDownloadAndInstallUpdate = {
                         scope.launch { drawerState.close() }
                         viewModel.requestDownloadUpdate()
+                    },
+                    onOpenReleasesPage = {
+                        scope.launch { drawerState.close() }
+                        openExternalUrl(state.cloud.releasePageUrl)
                     }
                 )
             }
@@ -568,6 +591,48 @@ class MainActivity : ComponentActivity() {
                         onDismiss = { showCloudDialog = false }
                     )
                 }
+
+                if (state.cloud.isDownloadingUpdate) {
+                    val pct = state.cloud.updateDownloadPercent
+                    AlertDialog(
+                        onDismissRequest = {},
+                        title = {
+                            Text(
+                                text = "Downloading Update",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    text = state.cloud.availableUpdateVersion?.let { "Downloading POTR Bonsai v$it…" }
+                                        ?: "Downloading latest POTR Bonsai APK…",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (pct in 1..99) {
+                                    LinearProgressIndicator(
+                                        progress = { pct / 100f },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                } else {
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                }
+                                Text(
+                                    text = if (pct > 0) "$pct% complete" else "Connecting to GitHub Releases…",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = { openExternalUrl(state.cloud.releasePageUrl) }
+                            ) {
+                                Text("Open in Browser")
+                            }
+                        }
+                    )
+                }
             }
         }
     }
@@ -694,20 +759,27 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun downloadAndInstallUpdate(apkUrl: String) {
+        if (viewModel.uiState.value.cloud.isDownloadingUpdate) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-            viewModel.emitMessage("Allow 'Install unknown apps', then tap Install again")
-            startActivity(
+            pendingInstallApkUrl = apkUrl
+            viewModel.emitMessage("Enable 'Allow from this source' — download will start automatically when you return")
+            unknownAppSourcesLauncher.launch(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
             )
             return
         }
         lifecycleScope.launch {
-            viewModel.emitMessage("Downloading APK update…")
+            viewModel.setUpdateDownloadProgress(true, 0, "Downloading APK update…")
             try {
                 val destFile = File(cacheDir, "downloads/potr-bonsai-update.apk")
                 withContext(Dispatchers.IO) {
-                    appInstance.updateChecker.downloadApk(apkUrl, destFile).getOrThrow()
+                    appInstance.updateChecker.downloadApk(apkUrl, destFile) { pct ->
+                        runOnUiThread {
+                            viewModel.setUpdateDownloadProgress(true, pct, "Downloading update… $pct%")
+                        }
+                    }.getOrThrow()
                 }
+                viewModel.setUpdateDownloadProgress(false, 100, "Opening Android installer…")
                 val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.fileprovider", destFile)
                 val installIntent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, "application/vnd.android.package-archive")
@@ -716,7 +788,9 @@ class MainActivity : ComponentActivity() {
                 }
                 startActivity(installIntent)
             } catch (e: Exception) {
-                viewModel.emitMessage("Update download failed: ${e.message}")
+                val msg = "Update download failed: ${e.message ?: "unknown error"}"
+                viewModel.setUpdateDownloadProgress(false, 0, msg)
+                viewModel.emitMessage(msg)
             }
         }
     }
@@ -726,6 +800,7 @@ class MainActivity : ComponentActivity() {
         private const val STATE_REPLACE_ID = "pending_photo_replace_id"
         private const val STATE_CAMERA_TEMP_PATH = "pending_camera_temp_path"
         private const val STATE_STAGED_PHOTO_PATH = "staged_add_edit_photo_path"
+        private const val STATE_PENDING_INSTALL_URL = "pending_install_apk_url"
     }
 }
 
