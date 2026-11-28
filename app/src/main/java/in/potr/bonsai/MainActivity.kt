@@ -147,9 +147,10 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartIntentSenderForResult()
     ) { activityResult ->
         val data = activityResult.data
-        if (data == null && activityResult.resultCode == RESULT_CANCELED) {
+        val hasExtras = data?.extras != null && !data.extras!!.isEmpty
+        if (activityResult.resultCode == RESULT_CANCELED && !hasExtras) {
             viewModel.onGoogleAuthFailed(
-                "Google Sign-In closed without authorizing. If you didn't cancel, verify this APK's SHA-1 below matches your Google Cloud Android OAuth Client ID and your Gmail is added as a Test User.",
+                "Google Sign-In closed before completing [consent resultCode=0, empty intent]. If you didn't cancel, verify this SHA-1 is saved on your Android OAuth Client in Google Cloud Console and your Gmail is added under Audience → Test Users.",
                 isConfigError = true
             )
             return@registerForActivityResult
@@ -160,7 +161,7 @@ class MainActivity : ComponentActivity() {
             val token = authResult.accessToken
             if (token.isNullOrBlank()) {
                 viewModel.onGoogleAuthFailed(
-                    "Google did not grant an access token. Please try Sign In again.",
+                    "Google did not grant an access token [consent resultCode=${activityResult.resultCode}]. Please try Sign In again.",
                     isConfigError = false
                 )
             } else {
@@ -172,16 +173,19 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             val apiEx = GoogleAuthTokenProvider.findApiException(e)
             if (apiEx != null) {
-                val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(apiEx)
+                val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(
+                    apiEx,
+                    stage = "consent rc=${activityResult.resultCode}"
+                )
                 viewModel.onGoogleAuthFailed(msg, isConfig)
             } else if (activityResult.resultCode == RESULT_CANCELED) {
                 viewModel.onGoogleAuthFailed(
-                    "Google Sign-In closed without authorizing. If you didn't cancel, verify this APK's SHA-1 below matches your Google Cloud Android OAuth Client ID and your Gmail is added as a Test User.",
+                    "Google Sign-In closed without authorizing [consent resultCode=0]. Verify this SHA-1 in Google Cloud Console and your Gmail in Test Users.",
                     isConfigError = true
                 )
             } else {
                 viewModel.onGoogleAuthFailed(
-                    e.localizedMessage ?: "Google Sign-In failed.",
+                    "${e.localizedMessage ?: "Google Sign-In failed."} [consent rc=${activityResult.resultCode}]",
                     isConfigError = true
                 )
             }
@@ -718,11 +722,11 @@ class MainActivity : ComponentActivity() {
             .addOnFailureListener { e ->
                 val apiEx = GoogleAuthTokenProvider.findApiException(e)
                 if (apiEx != null) {
-                    val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(apiEx)
+                    val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(apiEx, stage = "authorize")
                     viewModel.onGoogleAuthFailed(msg, isConfig)
                 } else {
                     viewModel.onGoogleAuthFailed(
-                        e.localizedMessage ?: "Google Sign-In failed to start.",
+                        "${e.localizedMessage ?: "Google Sign-In failed to start."} [authorize]",
                         isConfigError = true
                     )
                 }

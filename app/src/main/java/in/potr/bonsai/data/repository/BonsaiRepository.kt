@@ -557,7 +557,14 @@ class BonsaiRepository(
             return@withContext CloudSyncOutcome.Success("No pending videos to upload")
         }
 
-        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context, prefs.googleEmail, allowInteractive)) {
+        when (
+            val auth = GoogleAuthTokenProvider.fetchAccessToken(
+                context = context,
+                existingEmail = prefs.googleEmail,
+                allowInteractiveResolution = allowInteractive,
+                scopes = GoogleAuthTokenProvider.YOUTUBE_SCOPES
+            )
+        ) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
             is AuthTokenResult.NeedsResolution -> return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
             is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
@@ -674,7 +681,14 @@ class BonsaiRepository(
      * Exports the current catalog to the Master Google Sheet.
      */
     suspend fun exportToGoogleSheet(): CloudSyncOutcome = withContext(Dispatchers.IO) {
-        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context, prefs.googleEmail, allowInteractiveResolution = true)) {
+        when (
+            val auth = GoogleAuthTokenProvider.fetchAccessToken(
+                context = context,
+                existingEmail = prefs.googleEmail,
+                allowInteractiveResolution = true,
+                scopes = GoogleAuthTokenProvider.SHEETS_SCOPES
+            )
+        ) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
             is AuthTokenResult.NeedsResolution -> return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
             is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
