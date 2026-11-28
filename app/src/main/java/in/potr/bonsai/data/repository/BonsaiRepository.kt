@@ -401,14 +401,8 @@ class BonsaiRepository(
      * and writes/patches `potr_bonsai_backup.json` in `Bonsai Catalogue/`.
      */
     suspend fun performDriveBackupAndPhotoSync(allowInteractive: Boolean = false): CloudSyncOutcome = withContext(Dispatchers.IO) {
-        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context, prefs.googleEmail, allowInteractive)) {
+        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(prefs)) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
-            is AuthTokenResult.NeedsResolution -> {
-                if (!allowInteractive) {
-                    prefs.lastBackupError = "Google authorization expired — open Cloud settings and tap Sign In."
-                }
-                return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
-            }
             is AuthTokenResult.Error -> {
                 prefs.lastBackupError = auth.message
                 return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
@@ -486,9 +480,8 @@ class BonsaiRepository(
      * and re-downloads specimen photos from Drive if missing on this device.
      */
     suspend fun restoreFromGoogleDrive(): CloudSyncOutcome = withContext(Dispatchers.IO) {
-        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(context, prefs.googleEmail, allowInteractiveResolution = true)) {
+        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(prefs)) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
-            is AuthTokenResult.NeedsResolution -> return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
             is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
             is AuthTokenResult.Success -> {
                 try {
@@ -557,16 +550,8 @@ class BonsaiRepository(
             return@withContext CloudSyncOutcome.Success("No pending videos to upload")
         }
 
-        when (
-            val auth = GoogleAuthTokenProvider.fetchAccessToken(
-                context = context,
-                existingEmail = prefs.googleEmail,
-                allowInteractiveResolution = allowInteractive,
-                scopes = GoogleAuthTokenProvider.YOUTUBE_SCOPES
-            )
-        ) {
+        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(prefs)) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
-            is AuthTokenResult.NeedsResolution -> return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
             is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
             is AuthTokenResult.Success -> {
                 var uploadedCount = 0
@@ -681,16 +666,8 @@ class BonsaiRepository(
      * Exports the current catalog to the Master Google Sheet.
      */
     suspend fun exportToGoogleSheet(): CloudSyncOutcome = withContext(Dispatchers.IO) {
-        when (
-            val auth = GoogleAuthTokenProvider.fetchAccessToken(
-                context = context,
-                existingEmail = prefs.googleEmail,
-                allowInteractiveResolution = true,
-                scopes = GoogleAuthTokenProvider.SHEETS_SCOPES
-            )
-        ) {
+        when (val auth = GoogleAuthTokenProvider.fetchAccessToken(prefs)) {
             is AuthTokenResult.NotSignedIn -> return@withContext CloudSyncOutcome.NotSignedIn
-            is AuthTokenResult.NeedsResolution -> return@withContext CloudSyncOutcome.NeedsResolution(auth.pendingIntent)
             is AuthTokenResult.Error -> return@withContext CloudSyncOutcome.Error(auth.message, auth.isConfigError)
             is AuthTokenResult.Success -> {
                 try {

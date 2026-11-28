@@ -22,6 +22,26 @@ class SecurePrefs(context: Context) {
         get() = prefs.getString(KEY_GOOGLE_EMAIL, null)
         set(value) = prefs.edit().putString(KEY_GOOGLE_EMAIL, value).apply()
 
+    var googleAccessToken: String
+        get() = getEncrypted(KEY_GOOGLE_ACCESS_TOKEN)
+        set(value) = putEncrypted(KEY_GOOGLE_ACCESS_TOKEN, value)
+
+    var googleRefreshToken: String
+        get() = getEncrypted(KEY_GOOGLE_REFRESH_TOKEN)
+        set(value) = putEncrypted(KEY_GOOGLE_REFRESH_TOKEN, value)
+
+    var googleTokenExpiresAtMs: Long
+        get() = prefs.getLong(KEY_GOOGLE_TOKEN_EXPIRES_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_GOOGLE_TOKEN_EXPIRES_AT, value).apply()
+
+    var pendingOAuthVerifier: String
+        get() = getEncrypted(KEY_OAUTH_VERIFIER)
+        set(value) = putEncrypted(KEY_OAUTH_VERIFIER, value)
+
+    var pendingOAuthState: String
+        get() = getEncrypted(KEY_OAUTH_STATE)
+        set(value) = putEncrypted(KEY_OAUTH_STATE, value)
+
     var driveFolderId: String?
         get() = prefs.getString(KEY_DRIVE_FOLDER_ID, null)
         set(value) = prefs.edit().putString(KEY_DRIVE_FOLDER_ID, value).apply()
@@ -79,6 +99,11 @@ class SecurePrefs(context: Context) {
     fun clearGoogleSession() {
         prefs.edit()
             .remove(KEY_GOOGLE_EMAIL)
+            .remove(KEY_GOOGLE_ACCESS_TOKEN)
+            .remove(KEY_GOOGLE_REFRESH_TOKEN)
+            .remove(KEY_GOOGLE_TOKEN_EXPIRES_AT)
+            .remove(KEY_OAUTH_VERIFIER)
+            .remove(KEY_OAUTH_STATE)
             .remove(KEY_DRIVE_FOLDER_ID)
             .remove(KEY_DRIVE_PHOTOS_FOLDER_ID)
             .remove(KEY_DRIVE_BACKUP_FILE_ID)
@@ -144,6 +169,11 @@ class SecurePrefs(context: Context) {
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
 
         private const val KEY_GOOGLE_EMAIL = "google_email"
+        private const val KEY_GOOGLE_ACCESS_TOKEN = "google_access_token_enc"
+        private const val KEY_GOOGLE_REFRESH_TOKEN = "google_refresh_token_enc"
+        private const val KEY_GOOGLE_TOKEN_EXPIRES_AT = "google_token_expires_at"
+        private const val KEY_OAUTH_VERIFIER = "oauth_pkce_verifier_enc"
+        private const val KEY_OAUTH_STATE = "oauth_pkce_state_enc"
         private const val KEY_DRIVE_FOLDER_ID = "drive_folder_id"
         private const val KEY_DRIVE_PHOTOS_FOLDER_ID = "drive_photos_folder_id"
         private const val KEY_DRIVE_BACKUP_FILE_ID = "drive_backup_file_id"

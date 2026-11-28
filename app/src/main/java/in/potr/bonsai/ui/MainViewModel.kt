@@ -556,6 +556,16 @@ class MainViewModel(
         emitMessage(message)
     }
 
+    fun onGoogleBrowserSignInDismissed() {
+        cloudState.update {
+            it.copy(
+                isSyncing = false,
+                authStatusMessage = "Sign-In closed before completing — tap Sign In to try again.",
+                authErrorMessage = null
+            )
+        }
+    }
+
     fun onGoogleSignedOut() {
         repository.prefs.clearGoogleSession()
         cloudState.update {

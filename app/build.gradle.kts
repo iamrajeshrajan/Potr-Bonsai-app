@@ -13,8 +13,8 @@ android {
         applicationId = "in.potr.bonsai"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "2.1.4"
+        versionCode = 9
+        versionName = "2.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -113,8 +113,8 @@ dependencies {
     // Offline Bench QR Code generation
     implementation("com.google.zxing:core:3.5.3")
 
-    // Google Sign-In & OAuth2 Scopes for Drive v3, Sheets v4, YouTube v3
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // Replaced Google Play Services Auth with direct RFC 7636 Browser OAuth 2.0 + PKCE (OkHttp)
+    // implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     // Networking for Drive REST API, Sheets REST API, YouTube Data API & potr.in WooCommerce REST API v3
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

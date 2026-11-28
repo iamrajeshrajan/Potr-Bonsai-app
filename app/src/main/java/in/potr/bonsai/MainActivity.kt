@@ -14,7 +14,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -86,7 +85,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import com.google.android.gms.auth.api.identity.Identity
+import `in`.potr.bonsai.cloud.AuthTokenResult
 import `in`.potr.bonsai.cloud.GoogleAuthTokenProvider
 import `in`.potr.bonsai.data.model.ScheduledActionEntity
 import `in`.potr.bonsai.data.model.SpecimenEntity
@@ -129,6 +128,7 @@ class MainActivity : ComponentActivity() {
     private var stagedBeforeVideoPath = mutableStateOf<String?>(null)
     private var stagedAfterVideoPath = mutableStateOf<String?>(null)
     private var pendingInstallApkUrl: String? = null
+    private var awaitingBrowserOAuth: Boolean = false
 
     private val unknownAppSourcesLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -140,55 +140,6 @@ class MainActivity : ComponentActivity() {
             downloadAndInstallUpdate(pendingUrl)
         } else if (!allowed) {
             viewModel.emitMessage("Enable 'Allow from this source' for POTR Bonsai to install updates")
-        }
-    }
-
-    private val googleAuthResolutionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult()
-    ) { activityResult ->
-        val data = activityResult.data
-        val hasExtras = data?.extras != null && !data.extras!!.isEmpty
-        if (activityResult.resultCode == RESULT_CANCELED && !hasExtras) {
-            viewModel.onGoogleAuthFailed(
-                "Google Sign-In closed before completing [consent resultCode=0, empty intent]. If you didn't cancel, verify this SHA-1 is saved on your Android OAuth Client in Google Cloud Console and your Gmail is added under Audience → Test Users.",
-                isConfigError = true
-            )
-            return@registerForActivityResult
-        }
-        try {
-            val authResult = Identity.getAuthorizationClient(this)
-                .getAuthorizationResultFromIntent(data)
-            val token = authResult.accessToken
-            if (token.isNullOrBlank()) {
-                viewModel.onGoogleAuthFailed(
-                    "Google did not grant an access token [consent resultCode=${activityResult.resultCode}]. Please try Sign In again.",
-                    isConfigError = false
-                )
-            } else {
-                lifecycleScope.launch {
-                    val email = GoogleAuthTokenProvider.fetchUserEmail(token) ?: "Google Account"
-                    viewModel.onGoogleSignedIn(email)
-                }
-            }
-        } catch (e: Exception) {
-            val apiEx = GoogleAuthTokenProvider.findApiException(e)
-            if (apiEx != null) {
-                val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(
-                    apiEx,
-                    stage = "consent rc=${activityResult.resultCode}"
-                )
-                viewModel.onGoogleAuthFailed(msg, isConfig)
-            } else if (activityResult.resultCode == RESULT_CANCELED) {
-                viewModel.onGoogleAuthFailed(
-                    "Google Sign-In closed without authorizing [consent resultCode=0]. Verify this SHA-1 in Google Cloud Console and your Gmail in Test Users.",
-                    isConfigError = true
-                )
-            } else {
-                viewModel.onGoogleAuthFailed(
-                    "${e.localizedMessage ?: "Google Sign-In failed."} [consent rc=${activityResult.resultCode}]",
-                    isConfigError = true
-                )
-            }
         }
     }
 
@@ -262,6 +213,7 @@ class MainActivity : ComponentActivity() {
             pendingCameraTempPath = savedInstanceState.getString(STATE_CAMERA_TEMP_PATH)
             stagedAddEditPhotoPath.value = savedInstanceState.getString(STATE_STAGED_PHOTO_PATH)
             pendingInstallApkUrl = savedInstanceState.getString(STATE_PENDING_INSTALL_URL)
+            awaitingBrowserOAuth = savedInstanceState.getBoolean(STATE_AWAITING_OAUTH, false)
         }
         enableEdgeToEdge()
 
@@ -269,6 +221,22 @@ class MainActivity : ComponentActivity() {
             PotrBonsaiTheme {
                 PotrBonsaiRoot()
             }
+        }
+
+        handleOAuthIntentIfPresent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleOAuthIntentIfPresent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (awaitingBrowserOAuth) {
+            awaitingBrowserOAuth = false
+            viewModel.onGoogleBrowserSignInDismissed()
         }
     }
 
@@ -279,6 +247,7 @@ class MainActivity : ComponentActivity() {
         outState.putString(STATE_CAMERA_TEMP_PATH, pendingCameraTempPath)
         outState.putString(STATE_STAGED_PHOTO_PATH, stagedAddEditPhotoPath.value)
         outState.putString(STATE_PENDING_INSTALL_URL, pendingInstallApkUrl)
+        outState.putBoolean(STATE_AWAITING_OAUTH, awaitingBrowserOAuth)
     }
 
     @Composable
@@ -313,10 +282,7 @@ class MainActivity : ComponentActivity() {
             viewModel.events.collect { event ->
                 when (event) {
                     is UiEvent.ShowMessage -> snackbarHostState.showSnackbar(event.text)
-                    is UiEvent.LaunchAuthResolution -> {
-                        val req = IntentSenderRequest.Builder(event.pendingIntent.intentSender).build()
-                        googleAuthResolutionLauncher.launch(req)
-                    }
+                    is UiEvent.LaunchAuthResolution -> startGoogleSignIn()
                     is UiEvent.InstallApk -> downloadAndInstallUpdate(event.apkUrl)
                 }
             }
@@ -688,53 +654,38 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startGoogleSignIn() {
+        try {
+            viewModel.onGoogleSignInStarted()
+            val browserIntent = GoogleAuthTokenProvider.buildBrowserSignInIntent(appInstance.repository.prefs)
+            awaitingBrowserOAuth = true
+            startActivity(browserIntent)
+        } catch (e: Exception) {
+            awaitingBrowserOAuth = false
+            viewModel.onGoogleAuthFailed(
+                "Could not open browser for Google Sign-In: ${e.message}",
+                isConfigError = false
+            )
+        }
+    }
+
+    private fun handleOAuthIntentIfPresent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (!GoogleAuthTokenProvider.isOAuthRedirectUri(uri)) return
+        awaitingBrowserOAuth = false
+        intent.data = null
         viewModel.onGoogleSignInStarted()
-        val request = GoogleAuthTokenProvider.buildAuthorizationRequest()
-        Identity.getAuthorizationClient(this)
-            .authorize(request)
-            .addOnSuccessListener { authorizationResult ->
-                if (authorizationResult.hasResolution()) {
-                    val pendingIntent = authorizationResult.pendingIntent
-                    if (pendingIntent != null) {
-                        val intentSenderReq = IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                        googleAuthResolutionLauncher.launch(intentSenderReq)
-                    } else {
-                        viewModel.onGoogleAuthFailed(
-                            "Google authorization could not open consent screen.",
-                            isConfigError = true
-                        )
-                    }
-                } else {
-                    val token = authorizationResult.accessToken
-                    if (token.isNullOrBlank()) {
-                        viewModel.onGoogleAuthFailed(
-                            "Google returned an empty access token. Please try again.",
-                            isConfigError = false
-                        )
-                    } else {
-                        lifecycleScope.launch {
-                            val email = GoogleAuthTokenProvider.fetchUserEmail(token) ?: "Google Account"
-                            viewModel.onGoogleSignedIn(email)
-                        }
-                    }
-                }
+        lifecycleScope.launch {
+            when (val result = GoogleAuthTokenProvider.handleOAuthRedirect(uri, appInstance.repository.prefs)) {
+                is AuthTokenResult.Success -> viewModel.onGoogleSignedIn(result.email)
+                is AuthTokenResult.NotSignedIn -> viewModel.onGoogleBrowserSignInDismissed()
+                is AuthTokenResult.Error -> viewModel.onGoogleAuthFailed(result.message, result.isConfigError)
             }
-            .addOnFailureListener { e ->
-                val apiEx = GoogleAuthTokenProvider.findApiException(e)
-                if (apiEx != null) {
-                    val (msg, isConfig) = GoogleAuthTokenProvider.explainApiException(apiEx, stage = "authorize")
-                    viewModel.onGoogleAuthFailed(msg, isConfig)
-                } else {
-                    viewModel.onGoogleAuthFailed(
-                        "${e.localizedMessage ?: "Google Sign-In failed to start."} [authorize]",
-                        isConfigError = true
-                    )
-                }
-            }
+        }
     }
 
     private fun signOutGoogle() {
-        Identity.getSignInClient(this).signOut().addOnCompleteListener {
+        lifecycleScope.launch {
+            GoogleAuthTokenProvider.revokeTokens(appInstance.repository.prefs)
             viewModel.onGoogleSignedOut()
         }
     }
@@ -814,6 +765,7 @@ class MainActivity : ComponentActivity() {
         private const val STATE_CAMERA_TEMP_PATH = "pending_camera_temp_path"
         private const val STATE_STAGED_PHOTO_PATH = "staged_add_edit_photo_path"
         private const val STATE_PENDING_INSTALL_URL = "pending_install_apk_url"
+        private const val STATE_AWAITING_OAUTH = "awaiting_browser_oauth"
     }
 }
 

@@ -354,9 +354,9 @@ fun CloudSettingsDialog(
                                             )
                                             Text(
                                                 text = "1. Enable Drive API, Sheets API & YouTube Data API v3.\n" +
-                                                    "2. Configure OAuth Consent Screen (External → add your Gmail as a Test User).\n" +
-                                                    "3. Create OAuth Client ID (Android) with the package & SHA-1 above.\n" +
-                                                    "Note: From v2.1.3 onward, GitHub Actions locks every build to this permanent SHA-1 so you only register it once.",
+                                                    "2. Under Audience, add your Gmail as a Test User.\n" +
+                                                    "3. In Clients → POTR Bonsai Android → Advanced settings, check \"Enable custom URI scheme\" and Save.\n" +
+                                                    "Sign-In opens Chrome (OAuth 2.0 + PKCE) and stores an encrypted refresh token so auto-backups stay connected.",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
